@@ -1,5 +1,7 @@
 data/
 keys.txt
+config/local_api_keys.yaml
+temp/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

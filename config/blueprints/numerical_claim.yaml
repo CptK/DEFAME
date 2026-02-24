@@ -1,0 +1,37 @@
+name: "numerical_claim"
+description: "For claims involving statistics, numbers, or quantitative data"
+claim_characteristics:
+  - "contains_numbers"
+  - "statistical_claim"
+  - "quantitative_data"
+  - "scientific_measurement"
+
+iterations:
+  - iteration: 1
+    actions:
+      - action: search
+    synthesis: false
+
+  - iteration: 2
+    actions:
+      - action: search
+      - action: search
+    synthesis: true
+
+  - iteration: 3
+    actions:
+      - action: search
+    synthesis: false
+
+stopping_criteria:
+  max_iterations: 3
+  early_stop_conditions:
+    - type: "authoritative_source_found"
+    - type: "exact_match_found"
+
+rationale: |
+  Numerical claims require finding authoritative sources with exact data.
+  First search to find potential sources with the claimed numbers.
+  Second iteration performs additional searches and synthesizes to compare numbers.
+  Third iteration seeks primary sources or official statistics if needed.
+  Stops early if authoritative source (government, research institution) found.

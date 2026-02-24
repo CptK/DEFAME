@@ -1,0 +1,54 @@
+# Blueprint Schema Definition
+# This file defines the structure for DEFAME verification blueprints
+
+# Blueprint Structure:
+# ------------------
+# name: string - Unique identifier for the blueprint
+# description: string - Human-readable description of when to use this blueprint
+# claim_characteristics: list - Types of claims this blueprint is designed for
+# iterations: list - Sequence of verification steps
+#   - iteration: int - Iteration number (1-indexed)
+#     actions: list - Actions to execute in this iteration
+#       - action: string - Action name (must be in allowed_actions)
+#         params: dict (optional) - Action-specific parameters
+#     synthesis: bool (optional) - Whether to add explicit synthesis stage
+# stopping_criteria: dict - When to stop verification
+#   max_iterations: int - Maximum number of iterations
+#   early_stop_conditions: list (optional) - Conditions for early stopping
+#     - type: string - "high_confidence" | "no_new_evidence" | "contradiction_found"
+#       threshold: float (optional) - Threshold for the condition
+
+# Available Actions (from DEFAME):
+# - search: Web search
+# - credibility_check: Check source credibility
+# - face_recognition: Identify faces in images
+# - geolocate: Determine location from images
+# - detect_objects: Detect objects in images
+# - ocr: Extract text from images
+# - detect_manipulation: Check for image manipulation
+
+# Example Blueprint:
+example_blueprint:
+  name: "example"
+  description: "Example blueprint showing all features"
+  claim_characteristics:
+    - "example_type"
+  iterations:
+    - iteration: 1
+      actions:
+        - action: search
+          params:
+            mode: news
+        - action: credibility_check
+      synthesis: true
+    - iteration: 2
+      actions:
+        - action: search
+          params:
+            mode: comprehensive
+  stopping_criteria:
+    max_iterations: 3
+    early_stop_conditions:
+      - type: "high_confidence"
+        threshold: 0.9
+      - type: "no_new_evidence"

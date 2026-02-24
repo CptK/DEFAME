@@ -1,0 +1,30 @@
+name: "simple_factual"
+description: "For straightforward factual claims without images or complex context"
+claim_characteristics:
+  - "simple_statement"
+  - "single_fact"
+  - "no_image"
+  - "common_knowledge_domain"
+
+iterations:
+  - iteration: 1
+    actions:
+      - action: search
+    synthesis: false
+
+  - iteration: 2
+    actions:
+      - action: search
+    synthesis: true
+
+stopping_criteria:
+  max_iterations: 2
+  early_stop_conditions:
+    - type: "high_confidence"
+      threshold: 0.85
+    - type: "no_new_evidence"
+
+rationale: |
+  Simple factual claims typically require only basic web search to verify.
+  Two iterations allow for initial search and verification from additional sources.
+  Early stopping if high confidence reached to save resources.

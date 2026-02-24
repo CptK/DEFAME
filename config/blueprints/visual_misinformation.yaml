@@ -1,0 +1,40 @@
+name: "visual_misinformation"
+description: "For claims where the primary concern is whether an image/video is authentic or manipulated"
+claim_characteristics:
+  - "has_image_or_video"
+  - "authenticity_questioned"
+  - "potential_deepfake"
+  - "out_of_context_image"
+
+iterations:
+  - iteration: 1
+    actions:
+      - action: detect_manipulation
+      - action: detect_objects
+      - action: geolocate
+    synthesis: true
+
+  - iteration: 2
+    actions:
+      - action: search
+      - action: search
+    synthesis: true
+
+  - iteration: 3
+    actions:
+      - action: search
+    synthesis: false
+
+stopping_criteria:
+  max_iterations: 3
+  early_stop_conditions:
+    - type: "manipulation_detected"
+    - type: "original_context_found"
+
+rationale: |
+  Visual misinformation requires comprehensive image analysis first.
+  All available image analysis tools used in iteration 1 to fully understand content.
+  Synthesis after iteration 1 crucial for integrating multimodal evidence.
+  Multiple searches in iteration 2 to find original context or related content.
+  Additional search in iteration 3 if needed.
+  Can stop early if clear manipulation found or original context established.

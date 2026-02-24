@@ -1,4 +1,5 @@
 data/
+keys.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -29,6 +30,7 @@ MANIFEST
 out/
 *Dockerfile_42
 /config/google_service_account_key.json
+data/
 
 .idea/
 **/.DS_Store

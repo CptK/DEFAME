@@ -1,11 +1,13 @@
 import os
-from multiprocessing import set_start_method
+import multiprocessing
 from pathlib import Path
 
 from defame.eval.evaluate import evaluate
 from defame.utils.utils import load_config, get_yaml_files
 
-set_start_method("spawn")
+# Set multiprocessing start method if not already set
+if multiprocessing.get_start_method(allow_none=True) is None:
+    multiprocessing.set_start_method("spawn")
 
 
 def run_experiment(config_file_path: str):

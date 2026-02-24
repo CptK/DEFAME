@@ -1,0 +1,39 @@
+name: "source_comparison"
+description: "For controversial claims requiring verification from multiple independent sources"
+claim_characteristics:
+  - "controversial"
+  - "conflicting_reports"
+  - "requires_consensus"
+  - "politically_sensitive"
+
+iterations:
+  - iteration: 1
+    actions:
+      - action: search
+      - action: search
+      - action: search
+    synthesis: false
+
+  - iteration: 2
+    actions:
+      - action: search
+      - action: search
+    synthesis: true
+
+  - iteration: 3
+    actions:
+      - action: search
+    synthesis: true
+
+stopping_criteria:
+  max_iterations: 3
+  early_stop_conditions:
+    - type: "source_consensus"
+      threshold: 0.75
+
+rationale: |
+  Controversial claims need multiple independent sources to establish truth.
+  First iteration gathers evidence from diverse sources (3 searches).
+  Second iteration performs additional searches and synthesizes findings.
+  Third iteration fills gaps if sources conflict or more evidence needed.
+  Stops early if sources reach consensus.

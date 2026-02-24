@@ -1,0 +1,43 @@
+# MOCHEG Blueprint Experiment (Blueprint-based with GPT-4o, Guided Mode, LLM Selection)
+# Uses blueprint system with:
+# - Guided mode: Blueprint actions + LLM reasoning
+# - LLM-based selection: GPT analyzes claim and selects appropriate blueprint
+benchmark_name: mocheg
+benchmark_kwargs:
+  variant: test
+fact_checker_kwargs:
+  decompose: false
+  decontextualize: false
+  filter_check_worthy: false
+  interpret: false
+  max_iterations: 3
+  max_result_len: 64000
+  procedure_variant: summary/dynamic
+  # Blueprint configuration
+  use_blueprints: true
+  blueprint_mode: guided  # Actions from blueprint, reasoning from LLM
+  blueprint_selection_strategy: llm_based  # LLM analyzes claim to select blueprint
+llm: gpt_5
+llm_kwargs:
+  temperature: 0.01
+n_samples: 15
+random_sampling: false
+sample_ids: null
+allowed_actions:
+- search
+- geolocate
+- detect_objects
+- detect_manipulation
+tools_config:
+  searcher:
+    limit_per_search: 5
+    search_config:
+      google:
+  geolocator:
+    model_name: "geolocal/StreetCLIP"
+    top_k: 10
+  object_detector:
+    model_name: "facebook/detr-resnet-50"
+  manipulation_detector: {}
+n_workers: 10
+print_log_level: info

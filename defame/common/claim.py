@@ -1,5 +1,3 @@
-from typing import Optional
-
 from ezmm import MultimodalSequence
 
 from defame.common.content import Content
@@ -7,21 +5,24 @@ from defame.common.label import Label
 
 
 class Claim(MultimodalSequence):
-    context: Optional[Content]  # Original content where the claim was extracted from
-    scope: Optional[tuple[int, int]]  # TODO: the range in the original context's text that belongs to this claim
-    id: Optional[str]
+    context: Content | None  # Original content where the claim was extracted from
+    scope: tuple[int, int] | None  # TODO: the range in the original context's text that belongs to this claim
+    id: str | None
+    dataset: str | None  # The dataset this claim belongs to
 
     def __init__(self,
                  *args,
                  id: str | int | None = None,
-                 context: Content = None,
-                 scope: tuple[int, int] = None,
+                 context: Content | None = None,
+                 scope: tuple[int, int] | None = None,
+                 dataset: str | None = None,
                  **kwargs):
         self.id = str(id) if id is not None else None
         self.context = context if context else Content(*args, **kwargs)
         self.scope = scope
-        self.verdict: Optional[Label] = None
-        self.justification: Optional[MultimodalSequence] = None
+        self.dataset = dataset
+        self.verdict: Label | None = None
+        self.justification: MultimodalSequence | None = None
         super().__init__(*args)
 
     @property

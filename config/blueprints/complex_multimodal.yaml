@@ -1,0 +1,38 @@
+name: "complex_multimodal"
+description: "For claims involving both text and visual content requiring image analysis"
+claim_characteristics:
+  - "has_image"
+  - "image_central_to_claim"
+  - "multiple_modalities"
+
+iterations:
+  - iteration: 1
+    actions:
+      - action: detect_objects
+      - action: detect_manipulation
+      - action: geolocate
+    synthesis: true
+
+  - iteration: 2
+    actions:
+      - action: search
+      - action: search
+    synthesis: false
+
+  - iteration: 3
+    actions:
+      - action: search
+    synthesis: true
+
+stopping_criteria:
+  max_iterations: 3
+  early_stop_conditions:
+    - type: "contradiction_found"
+    - type: "manipulation_detected"
+
+rationale: |
+  Multimodal claims require thorough image analysis before text-based verification.
+  First iteration focuses on understanding the image content, detecting manipulation, and geolocation.
+  Second iteration performs multiple searches for context using image-derived information.
+  Third iteration verifies with additional sources.
+  Synthesis after iterations 1 and 3 to integrate multimodal evidence.

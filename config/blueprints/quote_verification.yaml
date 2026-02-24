@@ -1,0 +1,38 @@
+name: "quote_verification"
+description: "For claims about statements allegedly made by public figures"
+claim_characteristics:
+  - "attributed_quote"
+  - "mentions_person"
+  - "direct_statement"
+  - "public_figure"
+
+iterations:
+  - iteration: 1
+    actions:
+      - action: search
+      - action: search
+    synthesis: false
+
+  - iteration: 2
+    actions:
+      - action: search
+    synthesis: true
+
+  - iteration: 3
+    actions:
+      - action: search
+    synthesis: false
+
+stopping_criteria:
+  max_iterations: 3
+  early_stop_conditions:
+    - type: "primary_source_found"
+    - type: "official_denial_found"
+    - type: "verified_by_factchecker"
+
+rationale: |
+  Quote verification requires finding primary sources or official statements.
+  Multiple searches in iteration 1 to find original source (speech, interview, post).
+  Additional search in iteration 2 with synthesis to assess quote context and accuracy.
+  Final search in iteration 3 if needed.
+  Stops if primary source found or authoritative fact-check exists.

@@ -1,0 +1,43 @@
+name: "deep_investigation"
+description: "For complex, multi-faceted claims requiring thorough investigation"
+claim_characteristics:
+  - "complex_claim"
+  - "multiple_sub_claims"
+  - "requires_decomposition"
+  - "high_stakes"
+
+iterations:
+  - iteration: 1
+    actions:
+      - action: search
+    synthesis: true
+
+  - iteration: 2
+    actions:
+      - action: search
+      - action: search
+    synthesis: true
+
+  - iteration: 3
+    actions:
+      - action: search
+    synthesis: true
+
+  - iteration: 4
+    actions:
+      - action: search
+    synthesis: true
+
+stopping_criteria:
+  max_iterations: 5
+  early_stop_conditions:
+    - type: "all_aspects_verified"
+    - type: "clear_contradiction_found"
+
+rationale: |
+  Complex claims require deep investigation with synthesis at each stage.
+  Each iteration includes synthesis to integrate evidence before proceeding.
+  Up to 5 iterations to allow thorough investigation of all claim aspects.
+  Multiple searches per iteration to ensure comprehensive evidence gathering.
+  This is the most thorough blueprint for the most challenging claims.
+  Synthesis at every iteration ensures reasoning quality stays high.

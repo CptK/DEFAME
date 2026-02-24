@@ -11,8 +11,8 @@ class Action(ABC):
     See existing subclasses for examples."""
     name: str
     requires_image: bool = False
-    additional_info: str = None
-    _init_parameters: dict = None
+    additional_info: str | None = None
+    _init_parameters: dict | None = None
 
     def _save_parameters(self, local_variables: dict):
         """Memorizes the parameters provided to the __init__() method of the action.

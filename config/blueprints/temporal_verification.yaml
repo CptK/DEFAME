@@ -1,0 +1,36 @@
+name: "temporal_verification"
+description: "For claims about time-sensitive events or historical facts requiring temporal context"
+claim_characteristics:
+  - "mentions_date"
+  - "about_event"
+  - "temporal_context_important"
+  - "recent_or_historical"
+
+iterations:
+  - iteration: 1
+    actions:
+      - action: search
+    synthesis: false
+
+  - iteration: 2
+    actions:
+      - action: search
+    synthesis: true
+
+  - iteration: 3
+    actions:
+      - action: search
+    synthesis: false
+
+stopping_criteria:
+  max_iterations: 4
+  early_stop_conditions:
+    - type: "timeline_established"
+    - type: "high_confidence"
+      threshold: 0.9
+
+rationale: |
+  Temporal claims require establishing accurate timeline from multiple sources.
+  Multiple search iterations to gather evidence from different time periods.
+  Synthesis in iteration 2 to establish initial timeline before further verification.
+  Extended to 4 iterations maximum as temporal context may require deeper investigation.

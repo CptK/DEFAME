@@ -1,0 +1,38 @@
+# MOCHEG Baseline Experiment (Vanilla DEFAME with GPT-4o)
+# Standard DEFAME with no blueprints - used as comparison baseline
+benchmark_name: mocheg
+benchmark_kwargs:
+  variant: test
+fact_checker_kwargs:
+  decompose: false
+  decontextualize: false
+  filter_check_worthy: false
+  interpret: false
+  max_iterations: 3
+  max_result_len: 64000
+  procedure_variant: summary/dynamic
+  # No blueprint configuration - vanilla DEFAME
+llm: gpt_5
+llm_kwargs:
+  temperature: 0.01
+n_samples: 15
+random_sampling: false
+sample_ids: null
+allowed_actions:
+- search
+- geolocate
+- detect_objects
+- detect_manipulation
+tools_config:
+  searcher:
+    limit_per_search: 5
+    search_config:
+      google:
+  geolocator:
+    model_name: "geolocal/StreetCLIP"
+    top_k: 10
+  object_detector:
+    model_name: "facebook/detr-resnet-50"
+  manipulation_detector: {}
+n_workers: 10
+print_log_level: info

@@ -21,13 +21,13 @@ class Benchmark(ABC, Iterable):
 
     file_path: Path
 
-    available_actions: list[Action]  # If none, all actions are allowed
+    available_actions: list[type]  # If none, all actions are allowed
 
-    extra_prepare_rules: str = None  # Additional, benchmark-specific instructions to guide LLM's initial reasoning
-    extra_plan_rules: str = None  # Additional, benchmark-specific instructions to guide LLM's action planning
-    extra_judge_rules: str = None  # Additional, benchmark-specific instructions to guide LLM's verdict prediction
+    extra_prepare_rules: str | None = None  # Additional, benchmark-specific instructions to guide LLM's initial reasoning
+    extra_plan_rules: str | None = None  # Additional, benchmark-specific instructions to guide LLM's action planning
+    extra_judge_rules: str | None = None  # Additional, benchmark-specific instructions to guide LLM's verdict prediction
 
-    def __init__(self, variant: str, file_path: Path | str = None):
+    def __init__(self, variant: str, file_path: Path | str | None = None):
         """
         @param variant: The split to use, usually one of 'train', 'dev', 'test', or `val`
         @param file_path: The path to the file (relative to the base data dir) that contains

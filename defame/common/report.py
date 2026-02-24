@@ -62,8 +62,8 @@ class Report:
 
     claim: Claim
     record: list  # contains intermediate reasoning and evidence, organized in blocks
-    verdict: Label = None
-    justification: str = None
+    verdict: Label | None = None
+    justification: str | None = None
 
     def __init__(self, claim: Claim):
         self.claim = claim
@@ -125,6 +125,11 @@ class Report:
             if isinstance(block, ReasoningBlock):
                 reasoning_texts.append(block.text)
         return reasoning_texts
+
+    def get_iteration(self) -> int:
+        """Returns the current iteration number (1-indexed). Before any evidence
+        retrieval this returns 1, after the first round it returns 2, etc."""
+        return sum(1 for block in self.record if isinstance(block, EvidenceBlock)) + 1
 
     def get_all_actions(self) -> list[Action]:
         all_actions = []

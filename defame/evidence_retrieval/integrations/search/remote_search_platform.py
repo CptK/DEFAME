@@ -31,8 +31,11 @@ class RemoteSearchPlatform(SearchPlatform):
             if is_new := not self.path_to_cache.exists():
                 os.makedirs(os.path.dirname(self.path_to_cache), exist_ok=True)
             self.conn = sqlite3.connect(self.path_to_cache, timeout=10, check_same_thread=False)
-            # Enable Write-Ahead Logging (WAL) for concurrent access
-            self.conn.execute("PRAGMA journal_mode=WAL;")
+            try:
+                # Enable Write-Ahead Logging (WAL) for concurrent access
+                self.conn.execute("PRAGMA journal_mode=WAL;")
+            except sqlite3.OperationalError:
+                pass  # WAL unsupported on this filesystem (e.g. NFS/VAST); use default journal mode
             self.cur = self.conn.cursor()
             if is_new:
                 self._init_db()

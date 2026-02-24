@@ -1,13 +1,14 @@
 import csv
 import inspect
 import json
+import multiprocessing
 import re
 import time
 import traceback
-from multiprocessing import Process, set_start_method
+from multiprocessing import Process
 from pathlib import Path
 from queue import Empty
-from typing import Sequence, Optional
+from typing import Sequence
 
 import nltk
 import numpy as np
@@ -41,17 +42,17 @@ def evaluate(
         llm: str,
         benchmark_name: str,
         tools_config: dict[str, dict],
-        experiment_name: str = None,
-        fact_checker_kwargs: dict = None,
-        llm_kwargs: dict = None,
-        benchmark_kwargs: dict = None,
-        allowed_actions: list[str] = None,
-        n_samples: int = None,
-        sample_ids: list[int | str] = None,
+        experiment_name: str | None = None,
+        fact_checker_kwargs: dict | None = None,
+        llm_kwargs: dict | None = None,
+        benchmark_kwargs: dict | None = None,
+        allowed_actions: list[str] | None = None,
+        n_samples: int | None = None,
+        sample_ids: list[int | str] | None = None,
         random_sampling: bool = False,
         print_log_level: str = "log",
-        continue_experiment_dir: str = None,
-        n_workers: int = None,
+        continue_experiment_dir: str | None = None,
+        n_workers: int | None = None,
 ):
     assert not n_samples or not sample_ids
 
@@ -102,7 +103,9 @@ def evaluate(
         allowed_actions = [a for a in benchmark.available_actions if a.name in allowed_actions]
 
     # Sanity check
-    set_start_method("spawn")
+    # Set multiprocessing start method if not already set
+    if multiprocessing.get_start_method(allow_none=True) is None:
+        multiprocessing.set_start_method("spawn")
     p = Process(target=validate_config, args=(tools_config, allowed_actions))
     p.start()
     p.join()
@@ -332,9 +335,9 @@ def finalize_evaluation(experiment_dir: str | Path,
 
 
 def compute_metrics(predicted_labels: np.ndarray,
-                    ground_truth_labels: Optional[np.ndarray] = None,
-                    predicted_justifications: Optional[Sequence[str]] = None,
-                    ground_truth_justifications: Optional[Sequence[str]] = None,
+                    ground_truth_labels: np.ndarray | None = None,
+                    predicted_justifications: Sequence[str] | None = None,
+                    ground_truth_justifications: Sequence[str] | None = None,
                     is_mocheg: bool = False):
     n_samples = len(predicted_labels)
     n_refused = np.count_nonzero(np.array(predicted_labels) == "REFUSED_TO_ANSWER")
@@ -472,7 +475,7 @@ def compute_accuracy(predictions: pd.DataFrame) -> float:
     return accuracy
 
 
-def naive_evaluate(model: str, model_kwargs: dict = None, benchmark_name: str = "fever1", n_samples: int = None,
+def naive_evaluate(model: str, model_kwargs: dict | None = None, benchmark_name: str = "fever1", n_samples: int | None = None,
                    **kwargs) -> float:
     benchmark = load_benchmark(benchmark_name)
     model = make_model(model, **model_kwargs)

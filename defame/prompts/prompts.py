@@ -440,20 +440,29 @@ def extract_actions(answer: str, limit=5) -> list[Action]:
         # Potentially prompt LLM to correct format: Expected format: action_name("arguments")
         return []
 
-    # Join multi-line function calls into single lines before parsing
-    joined_lines = []
+    # Parse actions - handle multi-line function calls by joining lines until parentheses are balanced
+    lines = actions_str.split('\n')
+    raw_actions = []
+    current_action = ""
     paren_depth = 0
-    for line in actions_str.split('\n'):
+
+    for line in lines:
         stripped = line.strip()
         if not stripped:
             continue
-        if paren_depth > 0:
-            joined_lines[-1] += " " + stripped
-        else:
-            joined_lines.append(stripped)
+
+        current_action += (" " if current_action else "") + stripped
         paren_depth += stripped.count('(') - stripped.count(')')
 
-    # Parse actions
+        if paren_depth <= 0:
+            raw_actions.append(current_action)
+            current_action = ""
+            paren_depth = 0
+
+    # Handle any remaining incomplete action
+    if current_action:
+        raw_actions.append(current_action)
+
     actions = []
     for raw_action in joined_lines:
         action = parse_single_action(raw_action)
@@ -467,7 +476,8 @@ def extract_actions(answer: str, limit=5) -> list[Action]:
 
 def extract_verdict(response: str, classes: Collection[Label]) -> Optional[Label]:
     answer = extract_last_code_span(response)
-    answer = re.sub(r'[^\w\-\s]', '', answer).strip().lower()
+    # Preserve parentheses so labels like "intact (certain)" can match
+    answer = re.sub(r'[^\w\-\s()]', '', answer).strip().lower()
 
     if not answer:
         pattern = re.compile(r'\*\*(.*)\*\*', re.DOTALL)
@@ -479,11 +489,11 @@ def extract_verdict(response: str, classes: Collection[Label]) -> Optional[Label
         assert label in classes
         return label
 
-    except ValueError:
-        # TODO: Verify if this is necessary
-        # Maybe the label is a substring of the response
-        for c in classes:
-            if c.value in response:
+    except (ValueError, AssertionError):
+        # Try substring matching against class label values in the response
+        # Sort longest-first so "intact (rather certain)" matches before "intact"
+        for c in sorted(classes, key=lambda c: len(c.value), reverse=True):
+            if c.value in response.lower():
                 return c
 
     return None

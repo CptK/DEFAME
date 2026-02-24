@@ -1,3 +1,4 @@
+import base64
 import copy
 import re
 from abc import ABC
@@ -108,6 +109,33 @@ class OpenAIAPI:
         return completion.choices[0].message.content
 
 
+class SelfHostedAPI:
+    def __init__(self, model: str):
+        self.model = model
+        self.client = OpenAI(base_url="http://130.83.9.235:8080/v1", api_key="dummy")
+
+    def __call__(self, prompt: Prompt, system_prompt: str, **kwargs):
+        if prompt.has_videos():
+            raise ValueError(f"{self.model} does not support videos.")
+
+        if prompt.has_audios():
+            raise ValueError(f"{self.model} does not support audios.")
+
+        content = format_for_gpt(prompt)  # Use the same function as OpenAI
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": content})
+
+        completion = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            **kwargs
+        )
+        return completion.choices[0].message.content
+
+
 class DeepSeekAPI:
     def __init__(self, model: str):
         self.model = model
@@ -163,7 +191,7 @@ class Model(ABC):
     open_source: bool
 
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
-    guardrail_bypass_system_prompt: str = None
+    guardrail_bypass_system_prompt: str | None = None
 
     accepts_images: bool
     accepts_videos: bool
@@ -176,7 +204,7 @@ class Model(ABC):
                  top_k: int = 50,
                  max_response_len: int = 2048,
                  repetition_penalty: float = 1.2,
-                 device: str | torch.device = None):
+                 device: str | torch.device | None = None):
 
         shorthand = model_specifier_to_shorthand(specifier)
         self.name = shorthand
@@ -207,10 +235,12 @@ class Model(ABC):
     def generate(
             self,
             prompt: Prompt | str,
-            temperature: float = None,
+            temperature: float | None = None,
             top_p=None,
             top_k=None,
-            max_attempts: int = 3) -> dict | str | None:
+            max_attempts: int = 3,
+            use_system_prompt: bool = True
+    ) -> dict | str | None:
         """Continues the provided prompt and returns the continuation (the response)."""
 
         if isinstance(prompt, str):
@@ -244,19 +274,20 @@ class Model(ABC):
 
             # Trim prompt if too long
             n_tokens_sys_prompt = self.count_tokens(system_prompt)
-            prompt_length = self.count_tokens(prompt) + n_tokens_sys_prompt
-            if prompt_length > self.context_window:
-                logger.debug(f"Prompt has {prompt_length} tokens which is too long "
-                             f"for the context window of length {self.context_window} "
-                             f"tokens. Truncating the prompt.")
-                max_chars = (self.context_window - n_tokens_sys_prompt) * 3
-                prompt_str_truncated = str(prompt)[:max_chars]
-                prompt = Prompt(text=prompt_str_truncated)
+            prompt_tokens = self.count_tokens(prompt)
+            total_tokens = prompt_tokens + n_tokens_sys_prompt
+            max_prompt_tokens = self.max_prompt_len - n_tokens_sys_prompt
+            if total_tokens > self.max_prompt_len and max_prompt_tokens > 0:
+                logger.debug(f"Prompt has {total_tokens} tokens which exceeds the "
+                             f"limit of {self.max_prompt_len} tokens. Truncating.")
+                ratio = max_prompt_tokens / prompt_tokens
+                prompt_str = str(prompt)
+                prompt = Prompt(text=prompt_str[:int(len(prompt_str) * ratio)])
 
             self.n_calls += 1
             self.n_input_tokens += self.count_tokens(prompt)
             response = self._generate(prompt, temperature=temperature, top_p=top_p, top_k=top_k,
-                                      system_prompt=system_prompt)
+                                      system_prompt=system_prompt if use_system_prompt else None)
             logger.log_model_comm(
                 f"{type(prompt).__name__} - QUERY:\n\n{prompt}\n\n\n\n===== > RESPONSE:  < =====\n{response}")
             self.n_output_tokens += self.count_tokens(response)
@@ -287,7 +318,7 @@ class Model(ABC):
 
         return response
 
-    def _generate(self, prompt: Prompt, temperature: float, top_p: float, top_k: int, system_prompt: str = None) -> str:
+    def _generate(self, prompt: Prompt, temperature: float, top_p: float, top_k: int, system_prompt: str | None = None) -> str:
         """The model-specific generation function."""
         raise NotImplementedError
 
@@ -319,11 +350,19 @@ class GPTModel(Model):
     accepts_images = True
 
     def load(self, model_name: str) -> Pipeline | OpenAIAPI:
+        self.is_gpt5 = "gpt-5" in model_name.lower()
         return OpenAIAPI(model=model_name)
 
     def _generate(self, prompt: Prompt, temperature: float, top_p: float, top_k: int,
-                  system_prompt: Prompt = None) -> str:
+                  system_prompt: Prompt | None = None) -> str:
         try:
+            if self.is_gpt5:
+                return self.api(
+                    prompt,
+                    system_prompt=system_prompt,
+                    temperature=1, # GPT-5 only supports temperature=1 and no top_p
+                )
+
             return self.api(
                 prompt,
                 temperature=temperature,
@@ -366,7 +405,7 @@ class DeepSeekModel(Model):
         return DeepSeekAPI(model=model_name)
 
     def _generate(self, prompt: Prompt, temperature: float, top_p: float, top_k: int,
-                  system_prompt: Prompt = None) -> str:
+                  system_prompt: Prompt | None = None) -> str:
         try:
             return self.api(
                 prompt,
@@ -378,13 +417,34 @@ class DeepSeekModel(Model):
             logger.warning("Error while calling the LLM! Continuing with empty response.\n" + str(e))
             logger.warning("Prompt used:\n" + str(prompt))
         return ""
+    
+
+class SelfHostedModel(Model):
+    open_source = True
+    accepts_images = True
+
+    def load(self, model_name: str) -> Pipeline | None:
+        logger.info(f"Using self-hosted model: {model_name}")
+        return SelfHostedAPI(model=model_name)
+
+    def _generate(self, prompt: Prompt, temperature: float, top_p: float, top_k: int,
+                  system_prompt: Prompt | None = None) -> str:
+        return self.api(
+            prompt,
+            temperature=temperature,
+            top_p=top_p,
+            system_prompt=system_prompt,
+        )
+
+    def count_tokens(self, prompt: Prompt | str) -> int:
+        return 0
 
 
 class HuggingFaceModel(Model, ABC):
     open_source = True
     api: Pipeline
 
-    def _finalize_load(self, task: str, model_name: str, model_kwargs: dict = None) -> Pipeline:
+    def _finalize_load(self, task: str, model_name: str, model_kwargs: dict | None = None) -> Pipeline:
         if model_kwargs is None:
             model_kwargs = dict()
         self.model_name = model_name
@@ -405,7 +465,7 @@ class HuggingFaceModel(Model, ABC):
         return ppl
 
     def _generate(self, prompt: Prompt, temperature: float, top_p: float, top_k: int,
-                  system_prompt: Prompt = None) -> str:
+                  system_prompt: Prompt | None = None) -> str:
         # Handling needs to be done case by case. Default uses meta-llama formatting.
         prompt_prepared = self.handle_prompt(prompt, system_prompt)
         stopping_criteria = StoppingCriteriaList([RepetitionStoppingCriteria(self.tokenizer)])
@@ -450,7 +510,7 @@ fact-check any presented content."""
     def handle_prompt(
             self,
             original_prompt: Prompt,
-            system_prompt: str = None,
+            system_prompt: str | None = None,
     ) -> str:
         """
         Model specific processing of the prompt using the model's tokenizer with a specific template.
@@ -579,7 +639,7 @@ fact-check any presented content."""
         return super()._finalize_load("text-generation", model_name)
 
     def _generate(self, prompt: Prompt, temperature: float, top_p: float, top_k: int,
-                  system_prompt: Prompt = None) -> str:
+                  system_prompt: Prompt | None = None) -> str:
         """
         Generates responses for both standard LLaMA models and LLaMA 3.2.
         Adjusts based on the model type for multimodal handling.
@@ -650,7 +710,7 @@ the instructions and keep the output to the minimum."""
         return self.model
 
     def _generate(self, prompt: Prompt, temperature: float, top_k: int, top_p: int,
-                  system_prompt: Prompt = None) -> str:
+                  system_prompt: Prompt | None = None) -> str:
         inputs, formatted_prompt = self.handle_prompt(prompt, system_prompt)
         stopping_criteria = StoppingCriteriaList([RepetitionStoppingCriteria(self.tokenizer)])
 
@@ -676,7 +736,7 @@ the instructions and keep the output to the minimum."""
         elif "llava_onevision" in self.name:
             return response
 
-    def handle_prompt(self, original_prompt: Prompt, system_prompt: str = None) -> str:
+    def handle_prompt(self, original_prompt: Prompt, system_prompt: str | None = None) -> str:
         if system_prompt is None:
             system_prompt = self.system_prompt
 
@@ -775,6 +835,8 @@ def make_model(name: str, **kwargs) -> Model:
                 # raise  # Re-raise the exception or handle it as needed (e.g., fallback to CPU)
         case "deepseek":
             return DeepSeekModel(specifier, **kwargs)
+        case "selfhosted":
+            return SelfHostedModel(specifier, **kwargs)
         case "google":
             raise NotImplementedError("Google models not integrated yet.")
         case "anthropic":

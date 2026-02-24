@@ -1,6 +1,7 @@
 import traceback
-from multiprocessing import Process
-from multiprocessing.managers import SyncManager
+from multiprocessing import Pipe, Process
+from queue import Empty
+from multiprocessing.connection import Connection
 from pathlib import Path
 from queue import Empty
 from time import sleep
@@ -20,14 +21,64 @@ class Worker(Process):
         self.running = True
         self.start()
 
-    def execute(self,
-                input_queue: SyncManager.Queue,
-                output_queue: SyncManager.Queue,
-                device_id: int,
-                target_dir: str | Path,
-                print_log_level: str = "info",
-                **kwargs):
-        """Main task handling routine."""
+    def task_updates(self) -> dict:
+        while self._connection.poll():
+            yield self._connection.recv()
+
+    def get_messages(self):
+        msgs = []
+        try:
+            while self._connection.poll():
+                msgs.append(self._connection.recv())
+        except EOFError:
+            msgs.append(dict(worker_id=self.id,
+                             status=Status.FAILED,
+                             status_message=f"Meta connection of worker {self.id} closed unexpectedly."))
+            self.terminate()
+        return msgs
+
+    # Note: Do NOT override __getstate__ as it breaks Process pickling in spawn mode
+
+
+class FactCheckerWorker(Worker):
+    def __init__(self, identifier: int, *args, **kwargs):
+        self.runner = Runner(worker_id=identifier)
+        super().__init__(identifier, *args, target=self.runner.execute, **kwargs)
+
+
+class Runner:
+    # TODO: Refactor
+    # TODO: Use multiprocessing.Manager (instead of Queues/Connection) to share data between pool & worker
+    """The instance actually executing the routine inside the worker subprocess."""
+
+    def __init__(self, worker_id: int | None = None):
+        self.running = True
+        self.worker_id = worker_id
+
+    def stop(self, signum, frame):
+        logger.info(f"Runner of worker {self.worker_id} received termination signal. Stopping gracefully...")
+        self.running = False
+
+    def execute(
+        self,
+        input_queue,
+        output_queue,
+        connection: Connection,
+        device_id: int,
+        target_dir: str | Path,
+        print_log_level: str = "info",
+        **kwargs
+    ):
+        # Register signal handler for graceful termination
+        # signal.signal(signal.SIGTERM, self.stop)
+        # signal.signal(signal.SIGINT, self.stop)
+
+        def report(status_message: str, **kwargs):
+            task_id = task.id if locals().get("task") else None
+            connection.send(dict(worker_id=self.worker_id,
+                                 task_id=task_id,
+                                 status_message=status_message,
+                                 **kwargs))
 
         try:
             device = None if device_id is None else f"cuda:{device_id}"

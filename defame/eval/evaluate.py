@@ -1,7 +1,6 @@
 import csv
 import inspect
 import json
-import multiprocessing
 import re
 import time
 import traceback
@@ -23,6 +22,7 @@ from sklearn.metrics import precision_score, recall_score, f1_score
 from tqdm import tqdm
 
 from defame.common import Label, logger, Action
+from defame.common.label import COARSEN_7_TO_3, coarsen_label
 from defame.common.modeling import model_specifier_to_shorthand, AVAILABLE_MODELS, make_model
 from defame.eval import load_benchmark
 from defame.eval.averitec.benchmark import AVeriTeC
@@ -103,12 +103,11 @@ def evaluate(
         allowed_actions = [a for a in benchmark.available_actions if a.name in allowed_actions]
 
     # Sanity check
-    # Set multiprocessing start method if not already set
-    if multiprocessing.get_start_method(allow_none=True) is None:
-        multiprocessing.set_start_method("spawn")
-    p = Process(target=validate_config, args=(tools_config, allowed_actions))
+    p = Process(target=validate_config, args=(tools_config, allowed_actions, "cpu"))
     p.start()
     p.join()
+    if p.exitcode != 0:
+        logger.warning(f"Config validation subprocess exited with code {p.exitcode}. Continuing anyway.")
 
     if random_sampling:
         benchmark.shuffle()
@@ -207,12 +206,12 @@ def evaluate(
     finalize_evaluation(logger.target_dir, benchmark, stats)
 
 
-def validate_config(tools_config: dict[str, dict], allowed_actions: Sequence[Action]):
+def validate_config(tools_config: dict[str, dict], allowed_actions: Sequence[Action], device: str = "cpu"):
     """Run this within in a subprocess to avoid errors with CUDA (which doesn't
     like forking subprocesses, but spawning doesn't work either)."""
 
-    # Load the tools
-    tools = initialize_tools(tools_config, llm=None)
+    # Load the tools on CPU to avoid CUDA conflicts
+    tools = initialize_tools(tools_config, llm=None, device=device)
 
     # Verify that each tool is relevant (i.e. offers at least one allowed action)
     for tool in tools:
@@ -314,6 +313,21 @@ def finalize_evaluation(experiment_dir: str | Path,
                                    predicted_justifications=predicted_justifications,
                                    ground_truth_justifications=ground_truth_justifications,
                                    is_mocheg=is_mocheg)
+
+    # Compute coarsened 3-class metrics when running in 7-class mode
+    if ground_truth_labels is not None:
+        # Labels that only exist in 7-class mode (exclude UNKNOWN which is shared)
+        seven_class_only_labels = {l.name for l in COARSEN_7_TO_3.keys()
+                                   if l not in (Label.INTACT, Label.COMPROMISED, Label.UNKNOWN)}
+        all_labels = set(predicted_labels) | set(ground_truth_labels)
+        if all_labels & seven_class_only_labels:
+            coarsened_gt = np.array([coarsen_label(Label[l]).name if l in {la.name for la in Label} else l
+                                     for l in ground_truth_labels])
+            coarsened_pred = np.array([coarsen_label(Label[l]).name if l in {la.name for la in Label} else l
+                                       for l in predicted_labels])
+            coarsened_stats = compute_metrics(coarsened_pred, coarsened_gt)
+            metric_stats["Coarsened_3class"] = coarsened_stats
+
     stats["Predictions"] = metric_stats
     save_stats(stats, target_dir=experiment_dir)
 
@@ -325,6 +339,20 @@ def finalize_evaluation(experiment_dir: str | Path,
                           benchmark_classes,
                           benchmark_name=benchmark.name,
                           save_dir=experiment_dir)
+
+    # Plot coarsened confusion matrix for 7-class mode
+    if "Coarsened_3class" in metric_stats:
+        coarsened_classes = [Label.INTACT, Label.UNKNOWN, Label.COMPROMISED]
+        coarsened_gt = np.array([coarsen_label(Label[l]).name if l in {la.name for la in Label} else l
+                                 for l in ground_truth_labels])
+        coarsened_pred = np.array([coarsen_label(Label[l]).name if l in {la.name for la in Label} else l
+                                   for l in predicted_labels])
+        plot_confusion_matrix(coarsened_pred,
+                              coarsened_gt,
+                              coarsened_classes,
+                              benchmark_name=f"{benchmark.name} (coarsened 3-class)",
+                              save_dir=experiment_dir,
+                              filename="confusion_coarsened")
 
     if is_averitec:
         averitec_out_path = experiment_dir / logger.averitec_out_filename

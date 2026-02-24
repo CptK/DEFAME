@@ -1,10 +1,11 @@
 from abc import ABC
 from typing import Any, Optional
+import time
 
 import torch
 from ezmm import MultimodalSequence
 
-from defame.common import Action, Results, Evidence, Model
+from defame.common import Action, Results, Evidence, MultimediaSnippet, Model, logger
 
 
 class Tool(ABC):
@@ -12,7 +13,7 @@ class Tool(ABC):
     name: str
     actions: list[type(Action)]  # (classes of the) available actions this tool offers
 
-    def __init__(self, llm: Model = None, device: str | torch.device = None):
+    def __init__(self, llm: Model | None = None, device: str | torch.device | None = None):
         self.device = device
         self.llm = llm
 
@@ -20,8 +21,34 @@ class Tool(ABC):
 
     def perform(self, action: Action, summarize: bool = True, **kwargs) -> Evidence:
         assert type(action) in self.actions, f"Forbidden action: {action}"
-        result = self._perform(action)
-        summary = self._summarize(result, **kwargs) if summarize else None
+
+        # Execute the action
+        logger.log(f"[Tool:{self.name}] Starting _perform for {type(action).__name__}")
+        start_time = time.time()
+        try:
+            result = self._perform(action)
+            elapsed = time.time() - start_time
+            logger.log(f"[Tool:{self.name}] _perform completed in {elapsed:.2f}s, got {len(result) if hasattr(result, '__len__') else '?'} results")
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"[Tool:{self.name}] _perform failed after {elapsed:.2f}s: {e}")
+            raise
+
+        # Summarize the result
+        if summarize:
+            logger.log(f"[Tool:{self.name}] Starting _summarize")
+            start_time = time.time()
+            try:
+                summary = self._summarize(result, **kwargs)
+                elapsed = time.time() - start_time
+                logger.log(f"[Tool:{self.name}] _summarize completed in {elapsed:.2f}s")
+            except Exception as e:
+                elapsed = time.time() - start_time
+                logger.error(f"[Tool:{self.name}] _summarize failed after {elapsed:.2f}s: {e}")
+                raise
+        else:
+            summary = None
+
         return Evidence(result, action, takeaways=summary)
 
     def _perform(self, action: Action) -> Results:

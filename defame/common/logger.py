@@ -84,11 +84,11 @@ class Logger:
         self.model_comm_logger.propagate = False  # Prevent propagation to the main logger
 
     def set_experiment_dir(self,
-                           path: str | Path = None,
-                           benchmark_name: str = None,
-                           procedure_name: str = None,
-                           model_name: str = None,
-                           experiment_name: str = None):
+                           path: str | Path | None = None,
+                           benchmark_name: str | None = None,
+                           procedure_name: str | None = None,
+                           model_name: str | None = None,
+                           experiment_name: str | None = None):
         """Specify the experiment directory to print the logs and experiment results into.
 
         Args:
@@ -280,17 +280,26 @@ class Logger:
 
     def save_next_instance_stats(self, stats: dict, claim_id: int):
         assert self.experiment_dir is not None
-        all_instance_stats = self._load_stats_df()
 
-        # Convert statistics dict to Pandas dataframe
+        # Convert statistics dict to flattened format
         instance_stats = flatten_dict(stats)
         instance_stats["ID"] = claim_id
-        instance_stats = pd.DataFrame([instance_stats])
-        instance_stats.set_index("ID", inplace=True)
 
-        # Append instance stats and save
-        all_instance_stats = pd.concat([all_instance_stats, instance_stats])
-        all_instance_stats.to_csv(self.instance_stats_path)
+        # Check if file exists to determine if we need to write headers
+        file_exists = os.path.exists(self.instance_stats_path)
+
+        # Append to CSV without loading entire file
+        # This prevents O(n²) memory growth
+        if not file_exists:
+            # Create new file with headers
+            df = pd.DataFrame([instance_stats])
+            df.set_index("ID", inplace=True)
+            df.to_csv(self.instance_stats_path)
+        else:
+            # Append single row without loading entire file
+            df = pd.DataFrame([instance_stats])
+            df.set_index("ID", inplace=True)
+            df.to_csv(self.instance_stats_path, mode='a', header=False)
 
     def _load_stats_df(self):
         if os.path.exists(self.instance_stats_path):
@@ -328,9 +337,9 @@ class RemoveStringFormattingFormatter(logging.Formatter):
 
 
 def _determine_target_dir(benchmark_name: str = "testing",
-                          procedure_name: str = None,
-                          model_name: str = None,
-                          experiment_name: str = None) -> Path:
+                          procedure_name: str | None = None,
+                          model_name: str | None = None,
+                          experiment_name: str | None = None) -> Path:
     # assert benchmark_name is not None
 
     benchmark_name = benchmark_name if benchmark_name else "testing"

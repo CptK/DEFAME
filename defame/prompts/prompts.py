@@ -440,10 +440,22 @@ def extract_actions(answer: str, limit=5) -> list[Action]:
         # Potentially prompt LLM to correct format: Expected format: action_name("arguments")
         return []
 
+    # Join multi-line function calls into single lines before parsing
+    joined_lines = []
+    paren_depth = 0
+    for line in actions_str.split('\n'):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if paren_depth > 0:
+            joined_lines[-1] += " " + stripped
+        else:
+            joined_lines.append(stripped)
+        paren_depth += stripped.count('(') - stripped.count(')')
+
     # Parse actions
-    raw_actions = actions_str.split('\n')
     actions = []
-    for raw_action in raw_actions:
+    for raw_action in joined_lines:
         action = parse_single_action(raw_action)
         if action:
             actions.append(action)

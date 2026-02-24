@@ -10,11 +10,15 @@ from ezmm import Item
 from defame.common import logger, Claim, Content, Report, Label, Action, Model
 from defame.common.label import DEFAULT_LABEL_DEFINITIONS
 from defame.common.modeling import make_model
+from defame.common.structured_logger import StructuredLogger
+from defame.common.blueprint import Blueprint, BlueprintRegistry
 from defame.modules.actor import Actor
 from defame.modules.claim_extractor import ClaimExtractor
 from defame.modules.doc_summarizer import DocSummarizer
 from defame.modules.judge import Judge
 from defame.modules.planner import Planner
+from defame.modules.blueprint_planner import BlueprintPlanner
+from defame.modules.blueprint_selector import BlueprintSelector
 from defame.procedure import get_procedure
 from defame.evidence_retrieval import scraper, Tool
 from defame.evidence_retrieval.tools import initialize_tools
@@ -27,27 +31,33 @@ class FactChecker:
 
     default_procedure = "defame"
 
-    def __init__(self,
-                 llm: str | Model = "gpt_4o_mini",
-                 llm_kwargs: dict = None,
-                 tools: list[Tool] = None,
-                 tools_config: dict = None,
-                 available_actions: list[Action] = None,
-                 procedure_variant: str = None,
-                 interpret: bool = False,
-                 decompose: bool = False,
-                 decontextualize: bool = False,
-                 filter_check_worthy: bool = False,
-                 max_iterations: int = 5,
-                 max_result_len: int = None,
-                 restrict_results_to_claim_date: bool = True,
-                 allow_fact_checking_sites: bool = True,
-                 classes: Sequence[Label] = None,
-                 class_definitions: dict[Label, str] = None,
-                 extra_prepare_rules: str = None,
-                 extra_plan_rules: str = None,
-                 extra_judge_rules: str = None,
-                 device: str = None):
+    def __init__(
+        self,
+        llm: str | Model = "gpt_4o_mini",
+        llm_kwargs: dict | None = None,
+        tools: list[Tool] | None = None,
+        tools_config: dict | None = None,
+        available_actions: list[Action] | None = None,
+        procedure_variant: str | None = None,
+        interpret: bool = False,
+        decompose: bool = False,
+        decontextualize: bool = False,
+        filter_check_worthy: bool = False,
+        max_iterations: int = 5,
+        max_result_len: int | None = None,
+        restrict_results_to_claim_date: bool = True,
+        allow_fact_checking_sites: bool = True,
+        classes: Sequence[Label] | None = None,
+        class_definitions: dict[Label, str] | None = None,
+        extra_prepare_rules: str | None = None,
+        extra_plan_rules: str | None = None,
+        extra_judge_rules: str | None = None,
+        device: str | None = None,
+        use_blueprints: bool = False,
+        blueprint_mode: str = "pure",
+        blueprint_selection_strategy: str = "llm_based",
+        blueprints_dir: str | None = None
+    ) -> None:
 
         if tools_config is None:
             tools_config = dict(searcher=None)
@@ -60,12 +70,14 @@ class FactChecker:
 
         self.llm = make_model(llm, **llm_kwargs) if isinstance(llm, str) else llm
 
-        self.claim_extractor = ClaimExtractor(llm=self.llm,
-                                              prepare_rules=extra_prepare_rules,
-                                              interpret=interpret,
-                                              decompose=decompose,
-                                              decontextualize=decontextualize,
-                                              filter_check_worthy=filter_check_worthy)
+        self.claim_extractor = ClaimExtractor(
+            llm=self.llm,
+            prepare_rules=extra_prepare_rules,
+            interpret=interpret,
+            decompose=decompose,
+            decontextualize=decontextualize,
+            filter_check_worthy=filter_check_worthy
+        )
 
         if classes is None:
             if class_definitions is None:
@@ -85,36 +97,59 @@ class FactChecker:
 
         available_actions = get_available_actions(tools, available_actions)
 
+        # Initialize blueprint system if enabled
+        self.use_blueprints = use_blueprints
+        self.blueprint_mode = blueprint_mode
+        self.blueprint_registry = None
+        self.blueprint_selector = None
+
+        if use_blueprints:
+            logger.info("Initializing blueprint-based fact-checking")
+            self.blueprint_registry = BlueprintRegistry(blueprints_dir)
+            self.blueprint_selector = BlueprintSelector(
+                registry=self.blueprint_registry,
+                llm=self.llm,
+                strategy=blueprint_selection_strategy
+            )
+            logger.info(f"Loaded {len(self.blueprint_registry)} blueprints")
+
         # Initialize fact-checker modules
-        self.planner = Planner(valid_actions=available_actions,
-                               llm=self.llm,
-                               extra_rules=extra_plan_rules)
+        # Planner will be set per claim if using blueprints, otherwise use default
+        self.planner = Planner(valid_actions=available_actions, llm=self.llm, extra_rules=extra_plan_rules)
+        self.available_actions = available_actions
+        self.extra_plan_rules = extra_plan_rules
 
         self.actor = Actor(tools=tools)
 
-        self.judge = Judge(llm=self.llm,
-                           classes=classes,
-                           class_definitions=class_definitions,
-                           extra_rules=extra_judge_rules)
+        self.judge = Judge(
+            llm=self.llm,
+            classes=classes,
+            class_definitions=class_definitions,
+            extra_rules=extra_judge_rules
+        )
 
         self.doc_summarizer = DocSummarizer(self.llm)
 
         if procedure_variant is None:
             procedure_variant = self.default_procedure
 
-        self.procedure = get_procedure(procedure_variant,
-                                       llm=self.llm,
-                                       actor=self.actor,
-                                       judge=self.judge,
-                                       planner=self.planner,
-                                       max_iterations=self.max_iterations)
+        self.procedure = get_procedure(
+            procedure_variant,
+            llm=self.llm,
+            actor=self.actor,
+            judge=self.judge,
+            planner=self.planner,
+            max_iterations=self.max_iterations
+        )
 
     def extract_claims(self, content: Content | list[str | Item]) -> list[Claim]:
         if not isinstance(content, Content):
             content = Content(content)
         return self.claim_extractor.extract_claims(content)
 
-    def check_content(self, content: Content | list[str | Item]) -> tuple[Label, list[Report], list[dict[str, Any]]]:
+    def check_content(
+        self, content: Content | list[str | Item]
+    ) -> tuple[Label, list[Report], list[dict[str, Any]]]:
         """
         Fact-checks the given content ent-to-end by first extracting all check-worthy claims and then
         verifying each claim individually. Returns the aggregated veracity and the list of corresponding
@@ -150,6 +185,23 @@ class FactChecker:
         logger.info(f"Verifying claim.", send=True)
         logger.info(f"{bold(str(claim))}")
 
+        # Initialize structured logger
+        structured_log_path = logger.target_dir / "structured_log.json"
+        structured_logger = StructuredLogger(structured_log_path)
+
+        # Log claim metadata
+        claim_metadata = {
+            "speaker": claim.author,
+            "date": claim.date.isoformat() if claim.date else None,
+            "source": claim.origin,
+        }
+        structured_logger.log_claim(
+            claim_id=claim.id,
+            claim_text=str(claim),
+            dataset=claim.dataset if claim.dataset else 'unknown',
+            metadata=claim_metadata
+        )
+
         stats = {}
         self.actor.reset()  # remove all past search evidences
         self.actor.set_current_claim_id(claim.id)
@@ -163,11 +215,37 @@ class FactChecker:
             sys.exit(1)  # Exits the process for this worker
         self.llm.reset_stats()
 
+        # Select blueprint if using blueprint-based fact-checking
+        selected_blueprint = None
+        if self.use_blueprints and self.blueprint_selector:
+            selected_blueprint = self.blueprint_selector.select_blueprint(claim)
+            logger.info(f"Selected blueprint: {selected_blueprint.name}")
+
+            # Log blueprint selection
+            logger.info(f"Blueprint selection: {selected_blueprint.name} - {selected_blueprint.description}")
+
+            # Create blueprint planner for this claim
+            blueprint_planner = BlueprintPlanner(
+                valid_actions=self.available_actions,
+                llm=self.llm,
+                extra_rules=self.extra_plan_rules,
+                blueprint=selected_blueprint,
+                mode=self.blueprint_mode
+            )
+
+            # Temporarily replace the planner
+            original_planner = self.procedure.planner
+            self.procedure.planner = blueprint_planner
+
         start = time.time()
         doc = Report(claim)
 
         # Depending on the specified procedure variant, perform the fact-check
-        label, meta = self.procedure.apply_to(doc)
+        label, meta = self.procedure.apply_to(doc, structured_logger=structured_logger)
+
+        # Restore original planner if we replaced it
+        if self.use_blueprints and selected_blueprint:
+            self.procedure.planner = original_planner
 
         # Finalize the fact-check
         doc.add_reasoning("## Final Judgement\n" + self.judge.get_latest_reasoning())
@@ -181,9 +259,24 @@ class FactChecker:
             logger.info(f'Justification: {gray(doc.justification)}')
         doc.verdict = label
 
+        # Log final verdict to structured logger
+        structured_logger.log_final_verdict(
+            label=label.name,
+            justification=doc.justification if doc.justification else ""
+        )
+
+        # Finalize structured log with statistics
+        structured_logger.finalize()
+
         stats["Duration"] = time.time() - start
         stats["Model"] = self.llm.get_stats()
         stats["Tools"] = self.actor.get_tool_stats()
+        if selected_blueprint:
+            stats["Blueprint"] = {
+                "name": selected_blueprint.name,
+                "description": selected_blueprint.description,
+                "mode": self.blueprint_mode
+            }
         meta["Statistics"] = stats
         return doc, meta
 

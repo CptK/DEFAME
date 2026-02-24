@@ -1,18 +1,19 @@
 import re
 from datetime import datetime, timedelta, date
-from typing import Any, Optional
+import time
+from typing import Any, cast
 
 from ezmm import Image, MultimodalSequence
 from jinja2.exceptions import TemplateSyntaxError
 from openai import APIError
 
 from config.globals import api_keys
-from defame.common import Report, Prompt, logger, Action
+from defame.common import Report, Prompt, logger, Action, Evidence
+from defame.common.structured_logger import StructuredLogger
 from defame.evidence_retrieval import scraper
 from defame.evidence_retrieval.integrations.search import SearchResults, SearchPlatform, PLATFORMS, KnowledgeBase
 from defame.evidence_retrieval.integrations.search.common import Query, SearchMode, Source, WebSource
 from defame.evidence_retrieval.tools.tool import Tool
-from defame.prompts.prompts import SummarizeSourcePrompt
 from defame.utils.console import gray
 
 
@@ -28,14 +29,16 @@ class Search(Action):
     platform: SearchPlatform
     query: Query
 
-    def __init__(self,
-                 query: str = None,
-                 image: str = None,
-                 platform: str = "google",
-                 mode: str = "search",
-                 limit: int = None,
-                 start_date: str = None,
-                 end_date: str = None):
+    def __init__(
+        self,
+        query: str | None = None,
+        image: str | None = None,
+        platform: str = "google",
+        mode: str = "search",
+        limit: int | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None
+    ) -> None:
         """
         @param query: The textual search query. At least one of `query` or `image` must
             be set.
@@ -63,25 +66,31 @@ class Search(Action):
             logger.warning(f"Platform {platform} is not available. Defaulting to Google.")
             self.platform = PLATFORMS["google"]
 
-        image = Image(reference=image) if image else None
+        img = Image(reference=image) if image else None
 
         try:
-            mode = SearchMode(mode) if mode else None
+            search_mode = SearchMode(mode) if mode else None
         except ValueError:
-            mode = None
+            search_mode = None
 
         try:
-            start_date = date.fromisoformat(start_date) if start_date else None
+            start_date_datetime = date.fromisoformat(start_date) if start_date else None
         except ValueError:
-            start_date = None
+            start_date_datetime = None
 
         try:
-            end_date = date.fromisoformat(end_date) if end_date else None
+            end_date_datetime = date.fromisoformat(end_date) if end_date else None
         except ValueError:
-            end_date = None
+            end_date_datetime = None
 
-        self.query = Query(text=query, image=image, search_mode=mode, limit=limit,
-                           start_date=start_date, end_date=end_date)
+        self.query = Query(
+            text=query,
+            image=cast(Image | None, img),
+            search_mode=search_mode,
+            limit=limit,
+            start_date=start_date_datetime,
+            end_date=end_date_datetime
+        )
 
     def __eq__(self, other):
         return isinstance(other, Search) and self.query == other.query and self.name == other.name
@@ -99,18 +108,20 @@ class Searcher(Tool):
     n_retrieved_results: int
     n_unique_retrieved_results: int
 
-    def __init__(self,
-                 search_config: dict[str, dict] = None,
-                 limit_per_search: int = 5,
-                 max_result_len: int = None,  # chars
-                 extract_sentences: bool = False,
-                 **kwargs):
+    def __init__(
+        self,
+        search_config: dict[str, dict] | None = None,
+        limit_per_search: int = 5,
+        max_result_len: int | None = None,  # chars
+        extract_sentences: bool = False,
+        **kwargs
+    ) -> None:
         super().__init__(**kwargs)
 
         self.limit_per_search = limit_per_search
         self.max_result_len = max_result_len  # chars
         self.extract_sentences = extract_sentences
-        self.restrict_results_before_time: Optional[datetime] = None  # date restriction for all search actions
+        self.restrict_results_before_time: datetime | None = None  # date restriction for all search actions
 
         self.platforms = self._initialize_platforms(search_config)
         self.known_sources: set[Source] = set()
@@ -119,7 +130,27 @@ class Searcher(Tool):
 
         self.reset()
 
-    def _initialize_platforms(self, search_config: Optional[dict]) -> list[SearchPlatform]:
+    def perform(
+        self, action: Action, summarize: bool = True, structured_logger: StructuredLogger | None = None, **kwargs
+    ) -> Evidence:
+        """Override to log search results after summarization is complete."""
+        start_time = time.time()
+
+        # Perform the search
+        result = self._perform(action, structured_logger=None)  # Don't pass logger to _perform
+        execution_time = time.time() - start_time
+
+        # Summarize the results (this is where source.takeaways and usefulness are set)
+        summary = self._summarize(result, **kwargs) if summarize else None
+        evidence = Evidence(result, action, takeaways=summary)
+
+        # Now log with complete information including summaries and usefulness
+        if structured_logger and result and isinstance(action, Search):
+            self._log_search_results(structured_logger, action, result, execution_time)
+
+        return evidence
+
+    def _initialize_platforms(self, search_config: dict | None) -> list[SearchPlatform]:
         if search_config is None:
             search_config = self._get_default_search_config()
 
@@ -151,7 +182,9 @@ class Searcher(Tool):
         Search.additional_info = platforms_info
         return [Search]
 
-    def _perform(self, action: Search) -> Optional[SearchResults]:
+    def _perform(
+        self, action: Search, structured_logger: StructuredLogger | None = None
+    ) -> SearchResults | None:
         """Validates the search query (by enforcing potential restrictions)
         and runs it."""
         query = action.query
@@ -179,15 +212,19 @@ class Searcher(Tool):
                            f"Defaulting to {platform.name}.")
 
         # Run the query
-        return self._search(platform, query)
+        results = self._search(platform, query)
 
-    def _search(self, platform: SearchPlatform, query: Query) -> Optional[SearchResults]:
+        # Note: Logging moved to perform() method to capture summaries and usefulness
+
+        return results
+
+    def _search(self, platform: SearchPlatform, query: Query) -> SearchResults | None:
         """Executes the given search query on the given platform and processes the results.
         Removes known results."""
 
         # Run search and retrieve sources
         results = platform.search(query)
-        sources = results.sources[:self.limit_per_search]
+        sources = results.sources[:self.limit_per_search] if results else []
         self.n_retrieved_results += len(sources)
 
         # Remove known sources
@@ -209,7 +246,7 @@ class Searcher(Tool):
         self._postprocess_sources(sources, query)
         self._register_sources(sources)
 
-        if len(sources) > 0:
+        if len(sources) > 0 and results:
             results.sources = sources
             return results
 
@@ -254,7 +291,7 @@ class Searcher(Tool):
 
         return content
 
-    def _summarize(self, results: SearchResults, doc: Report = None) -> Optional[MultimodalSequence]:
+    def _summarize(self, results: SearchResults, doc: Report | None = None) -> MultimodalSequence | None:
         assert doc is not None
         if results:
             for source in results.sources:
@@ -263,8 +300,45 @@ class Searcher(Tool):
         else:
             return None
 
+    def _truncate_for_context(self, primary: str, context: str, reserve: int = 1500) -> tuple[str, str]:
+        """Truncate primary and context strings to fit the LLM's context window.
+        Prioritizes keeping the primary content over the context."""
+        max_tokens = self.llm.context_window - reserve
+        primary_tokens = self.llm.count_tokens(primary)
+        context_tokens = self.llm.count_tokens(context)
+        total = primary_tokens + context_tokens
+
+        if total <= max_tokens:
+            return primary, context
+
+        logger.debug(f"Summarize prompt has ~{total} tokens, exceeding limit of "
+                     f"{max_tokens} by ~{total - max_tokens}. Truncating.")
+
+        # Cap context (doc) at 25% of budget, give the rest to primary (source/summaries)
+        max_context_tokens = min(context_tokens, max_tokens // 4)
+        max_primary_tokens = max_tokens - max_context_tokens
+
+        if primary_tokens > max_primary_tokens:
+            ratio = max_primary_tokens / primary_tokens
+            primary = primary[:int(len(primary) * ratio)]
+        if context_tokens > max_context_tokens:
+            ratio = max_context_tokens / context_tokens
+            context = context[:int(len(context) * ratio)]
+
+        return primary, context
+
     def _summarize_single_source(self, source: Source, doc: Report):
-        prompt = SummarizeSourcePrompt(source, doc)
+        # Skip summarization if source wasn't successfully scraped
+        if not source.is_loaded():
+            source.takeaways = MultimodalSequence("NONE")
+            return
+
+        source_str, doc_str = self._truncate_for_context(str(source), str(doc))
+        prompt = Prompt(
+            placeholder_targets={"[SOURCE]": source_str, "[DOC]": doc_str},
+            name="SummarizeSourcePrompt",
+            template_file_path="defame/prompts/summarize_source.md",
+        )
 
         try:
             summary = self.llm.generate(prompt, max_attempts=3)
@@ -289,7 +363,7 @@ class Searcher(Tool):
         if source.is_relevant():
             logger.log("Useful source: " + gray(str(source)))
 
-    def _summarize_summaries(self, result: SearchResults, doc: Report) -> Optional[MultimodalSequence]:
+    def _summarize_summaries(self, result: SearchResults, doc: Report | None) -> MultimodalSequence | None:
         """Generates a summary, aggregating all relevant information from the
         identified and relevant sources."""
 
@@ -305,15 +379,77 @@ class Searcher(Tool):
         # return MultimodalSequence(relevant_sources)
 
         # Prepare the prompt for the LLM
-        placeholder_targets = {
-            "[SUMMARIES]": str(result),
-            "[DOC]": str(doc),
-        }
-        summarize_prompt = Prompt(placeholder_targets=placeholder_targets,
-                                  name="SummarizeSummariesPrompt",
-                                  template_file_path="defame/prompts/summarize_summaries.md")
+        summaries_str, doc_str = self._truncate_for_context(str(result), str(doc))
+        summarize_prompt = Prompt(
+            placeholder_targets={"[SUMMARIES]": summaries_str, "[DOC]": doc_str},
+            name="SummarizeSummariesPrompt",
+            template_file_path="defame/prompts/summarize_summaries.md",
+        )
 
         return MultimodalSequence(self.llm.generate(summarize_prompt))
+
+    def _log_search_results(
+            self,
+            structured_logger: StructuredLogger,
+            action: Search,
+            results: SearchResults,
+            execution_time: float
+        ):
+        """Log search results to structured logger after summarization is complete."""
+        # Extract platform and query from action
+        platform = action.platform
+        query = action.query
+
+        # Prepare parameters
+        parameters = {}
+        if query.start_date:
+            parameters["start_date"] = query.start_date.isoformat()
+        if query.end_date:
+            parameters["end_date"] = query.end_date.isoformat()
+        if query.limit:
+            parameters["limit"] = query.limit
+        if query.search_mode:
+            parameters["search_mode"] = query.search_mode.value
+
+        # Prepare results (now with summaries and usefulness from post-summarization)
+        result_dicts = []
+        for source in results.sources:
+            result_dict = {
+                "url": source.reference if hasattr(source, 'reference') else str(source),
+                "platform": platform.name,
+            }
+
+            if hasattr(source, 'title') and source.title:
+                result_dict["title"] = source.title
+
+            if hasattr(source, 'snippet') and source.snippet:
+                result_dict["snippet"] = str(source.snippet)
+
+            if hasattr(source, 'content') and source.content:
+                result_dict["content"] = str(source.content)[:1000]  # Limit content length
+
+            if hasattr(source, 'takeaways') and source.takeaways:
+                result_dict["summary"] = str(source.takeaways)
+
+            # Mark if useful (relevant) - ensure boolean value
+            if hasattr(source, 'is_relevant'):
+                useful = source.is_relevant()
+                result_dict["useful"] = bool(useful) if useful is not None else False
+            else:
+                result_dict["useful"] = False
+
+            result_dicts.append(result_dict)
+
+        # Log the search action
+        structured_logger.log_evidence_retrieval(
+            action_type="search",
+            tool=self.name,
+            query=query.text if query.text else None,
+            platform=platform.name,
+            parameters=parameters,
+            results=result_dicts,
+            execution_time=execution_time
+        )
 
     def get_stats(self) -> dict[str, Any]:
         return {
@@ -321,12 +457,12 @@ class Searcher(Tool):
             "Platform stats": {platform.name: platform.stats for platform in self.platforms},
         }
 
-    def get_platform(self, name: str) -> Optional[SearchPlatform]:
+    def get_platform(self, name: str) -> SearchPlatform | None:
         for platform in self.platforms:
             if platform.name == name:
                 return platform
 
-    def set_time_restriction(self, before: Optional[datetime]):
+    def set_time_restriction(self, before: datetime | None):
         self.restrict_results_before_time = before
 
     def set_claim_id(self, claim_id: str):

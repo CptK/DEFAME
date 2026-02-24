@@ -7,6 +7,7 @@ from ezmm import Image, MultimodalSequence
 
 from config.globals import manipulation_detection_model
 from defame.common import Results, Action
+from defame.common.structured_logger import StructuredLogger
 from defame.evidence_retrieval.tools.tool import Tool
 from third_party.TruFor.src.fake_detect_tool import analyze_image, create_visualizations
 from defame.prompts.prompts import SummarizeManipulationResultPrompt
@@ -74,7 +75,7 @@ class ManipulationDetector(Tool):
         self.model_file = model_file
         self.device = torch.device(self.device if self.device else ('cuda' if torch.cuda.is_available() else 'cpu'))
 
-    def _perform(self, action: DetectManipulation) -> ManipulationResults:
+    def _perform(self, action: DetectManipulation, structured_logger: StructuredLogger | None = None) -> ManipulationResults:
         result_dict = self.analyze_image(action.image.image)
 
         result = ManipulationResults(

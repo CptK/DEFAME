@@ -25,23 +25,14 @@ class Task:
             the completed task itself as an argument.
     """
 
-<<<<<<< HEAD
-    def __init__(self,
-                 payload: Content | Claim,
-                 id: str | int,
-                 state: TaskState = TaskState.PENDING,
-                 status_message: str = "Pending.",
-                 callback: Callable = None):
-=======
     def __init__(
         self,
         payload: Content | Claim,
         id: str | int,
-        status: Status = Status.PENDING,
+        state: TaskState = TaskState.PENDING,
         status_message: str = "Pending.",
         callback: Callable | None = None
     ) -> None:
->>>>>>> upstream/veritas
         self.id = str(id)
         self.payload = payload
         self.status = dict(state=state, message=status_message)
@@ -55,7 +46,7 @@ class Task:
         self.worker_id = worker.id
         self.set_status(TaskState.RUNNING, f"Assigned to worker {self.worker_id}.")
 
-    def set_status(self, state: TaskState = None, message: str = None):
+    def set_status(self, state: TaskState | None = None, message: str | None = None):
         self.status = dict(state=state or self.status["state"],
                            message=message or self.status["message"])
 

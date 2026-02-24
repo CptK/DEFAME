@@ -3,6 +3,7 @@ from typing import Optional
 from ezmm import MultimodalSequence
 
 from defame.common import Action, logger, Model, Results
+from defame.common.structured_logger import StructuredLogger
 from defame.utils.parsing import is_url
 from defame.evidence_retrieval.tools.tool import Tool
 
@@ -38,7 +39,7 @@ class CredibilityChecker(Tool):
         super().__init__(**kwargs)
         self.llm = llm
 
-    def _perform(self, action: CredibilityCheck) -> Results:
+    def _perform(self, action: CredibilityCheck, structured_logger: StructuredLogger | None = None) -> Results:
         return self.check_credibility(action.source)
 
     def check_credibility(self, source: str) -> Results:

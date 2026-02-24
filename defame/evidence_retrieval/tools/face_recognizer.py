@@ -5,6 +5,7 @@ from ezmm import MultimodalSequence, Image
 
 from defame.common import Action, logger
 from defame.common.results import Results
+from defame.common.structured_logger import StructuredLogger
 from defame.evidence_retrieval.tools.tool import Tool
 
 
@@ -41,7 +42,7 @@ class FaceRecognizer(Tool):
         # self.model = pipeline("image-classification", model=model_name, device=device)
         self.model = None
 
-    def _perform(self, action: FaceRecognition) -> Results:
+    def _perform(self, action: FaceRecognition, structured_logger: StructuredLogger | None = None) -> Results:
         return self.recognize_faces(action.image)
 
     def recognize_faces(self, image: torch.Tensor) -> Results:

@@ -7,7 +7,7 @@ import requests
 from ezmm import MultimodalSequence, Image
 
 from config.globals import firecrawl_url
-from defame.common import logger
+from defame.common import logger, MultimediaSnippet, Image
 from defame.evidence_retrieval.integrations import RETRIEVAL_INTEGRATIONS
 from defame.evidence_retrieval.integrations.search import WebSource
 from defame.evidence_retrieval.scraping.excluded import (is_unsupported_site, is_relevant_content,
@@ -48,7 +48,7 @@ class Scraper:
         if self.firecrawl_url:
             logger.log(f"✅ Detected Firecrawl running at {self.firecrawl_url}.")
 
-    def scrape_sources(self, sources: list[WebSource], timeout: float = None) -> None:
+    def scrape_sources(self, sources: list[WebSource], timeout: float | None = None) -> None:
         """Retrieves the contents for the given web sources and saves them
         into the respective web source object."""
         # Only keep sources that weren't scraped yet
@@ -60,11 +60,11 @@ class Scraper:
             for source, scraped in zip(sources, scrape_results):
                 source.content = scraped
 
-    def scrape_multiple(self, urls: list[str], timeout: float = None) -> list[MultimediaSnippet | None]:
+    def scrape_multiple(self, urls: list[str], timeout: float | None = None) -> list[MultimediaSnippet | None]:
         """Scrapes each URL concurrently. Synchronous wrapper for _scrape_multiple()."""
         return asyncio.run(self._scrape_multiple(urls, timeout=timeout))
 
-    async def _scrape_multiple(self, urls: list[str], timeout: float = None) -> list[MultimediaSnippet | None]:
+    async def _scrape_multiple(self, urls: list[str], timeout: float | None = None) -> list[MultimediaSnippet | None]:
         tasks = [asyncio.create_task(self._scrape(url)) for url in urls]
         if timeout and timeout > 0:
             done, pending = await asyncio.wait(tasks, timeout=timeout)

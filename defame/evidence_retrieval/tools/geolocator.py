@@ -7,6 +7,7 @@ from ezmm import MultimodalSequence, Image
 from transformers import AutoProcessor, AutoModel
 
 from defame.common import Action, Results, logger
+from defame.common.structured_logger import StructuredLogger
 from defame.evidence_retrieval.tools.tool import Tool
 
 
@@ -81,7 +82,7 @@ class Geolocator(Tool):
 
         self.model.to(self.device)
 
-    def _perform(self, action: Geolocate) -> Results:
+    def _perform(self, action: Geolocate, structured_logger: StructuredLogger | None = None) -> Results:
         return self.locate(action.image.image)
 
     def locate(self, image: PILImage, choices: List[str] = None) -> GeolocationResults:

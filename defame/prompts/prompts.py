@@ -464,7 +464,7 @@ def extract_actions(answer: str, limit=5) -> list[Action]:
         raw_actions.append(current_action)
 
     actions = []
-    for raw_action in joined_lines:
+    for raw_action in raw_actions:
         action = parse_single_action(raw_action)
         if action:
             actions.append(action)

@@ -8,6 +8,7 @@ from transformers import AutoProcessor, AutoModelForObjectDetection
 
 from defame.common import Results, Action, logger
 from defame.evidence_retrieval.tools.tool import Tool
+from defame.common.structured_logger import StructuredLogger
 
 
 class DetectObjects(Action):
@@ -73,7 +74,7 @@ class ObjectDetector(Tool):
         self.device = torch.device(self.device if self.device else ('cuda' if torch.cuda.is_available() else 'cpu'))
         self.model.to(self.device)
 
-    def _perform(self, action: DetectObjects) -> ObjectDetectionResults:
+    def _perform(self, action: DetectObjects, structured_logger: StructuredLogger | None = None) -> ObjectDetectionResults:
         return self.recognize_objects(action.image.image)
 
     def recognize_objects(self, image: PILImage) -> ObjectDetectionResults:

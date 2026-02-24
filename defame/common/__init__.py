@@ -9,3 +9,4 @@ from .modeling import Model
 from .prompt import Prompt
 from .report import Report
 from .results import Results
+from .medium import MultimediaSnippet, Medium, Image, Video, Audio

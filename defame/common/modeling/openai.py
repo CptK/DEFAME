@@ -58,12 +58,16 @@ class GPTModel(Model):
         top_k: int,
         system_prompt: Prompt | None = None
     ) -> str:
+        kwargs = {"temperature": temperature, "top_p": top_p}
+        if self.name in ["gpt_5"]:
+            kwargs.pop("temperature", None)
+            kwargs.pop("top_p", None)
+
         try:
             return self.api(
                 prompt,
-                temperature=temperature,
-                top_p=top_p,
                 system_prompt=system_prompt,
+                **kwargs,
             )
         except openai.RateLimitError as e:
             logger.critical(f"OpenAI rate limit hit!")

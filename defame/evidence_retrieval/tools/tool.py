@@ -6,6 +6,7 @@ import torch
 from ezmm import MultimodalSequence
 
 from defame.common import Action, Results, Evidence, MultimediaSnippet, Model, logger
+from defame.common.structured_logger import StructuredLogger
 
 
 class Tool(ABC):
@@ -19,14 +20,16 @@ class Tool(ABC):
 
         self.current_claim_id: Optional[str] = None  # used by few tools to adjust claim-specific behavior
 
-    def perform(self, action: Action, summarize: bool = True, **kwargs) -> Evidence:
+    def perform(
+        self, action: Action, summarize: bool = True, structured_logger: StructuredLogger | None = None, **kwargs
+    ) -> Evidence:
         assert type(action) in self.actions, f"Forbidden action: {action}"
 
         # Execute the action
         logger.log(f"[Tool:{self.name}] Starting _perform for {type(action).__name__}")
         start_time = time.time()
         try:
-            result = self._perform(action)
+            result = self._perform(action, structured_logger=structured_logger)
             elapsed = time.time() - start_time
             logger.log(f"[Tool:{self.name}] _perform completed in {elapsed:.2f}s, got {len(result) if hasattr(result, '__len__') else '?'} results")
         except Exception as e:
@@ -49,9 +52,12 @@ class Tool(ABC):
         else:
             summary = None
 
+        if structured_logger and not hasattr(self, '_log_search_results'):
+            self._log_tool_action(structured_logger, action, result, evidence, execution_time)
+
         return Evidence(result, action, takeaways=summary)
 
-    def _perform(self, action: Action) -> Results:
+    def _perform(self, action: Action, structured_logger: StructuredLogger | None = None) -> Results:
         """The actual function executing the action."""
         raise NotImplementedError
 
@@ -71,6 +77,30 @@ class Tool(ABC):
 
     def set_claim_id(self, claim_id: str):
         self.current_claim_id = claim_id
+
+    def _log_tool_action(self, structured_logger, action: Action, result: Results,
+                        evidence: Evidence, execution_time: float):
+        """Default logging implementation for tools."""
+        # Extract basic result information
+        result_dict = {
+            "action": str(action),
+            "result_type": type(result).__name__,
+        }
+
+        # Add summary if available
+        if evidence.takeaways:
+            result_dict["summary"] = str(evidence.takeaways)
+
+        # Try to extract useful flag
+        result_dict["useful"] = evidence.is_useful() if hasattr(evidence, 'is_useful') else False
+
+        # Log the action
+        structured_logger.log_evidence_retrieval(
+            action_type=action.name if hasattr(action, 'name') else type(action).__name__,
+            tool=self.name,
+            results=[result_dict],
+            execution_time=execution_time
+        )
 
 
 def get_available_actions(tools: list[Tool], available_actions: Optional[list[Action]]) -> set[type[Action]]:

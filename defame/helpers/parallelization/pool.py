@@ -1,11 +1,7 @@
 import atexit
 import time
 import traceback
-<<<<<<< HEAD
 from multiprocessing import Manager, Queue
-=======
-from multiprocessing import Manager
->>>>>>> upstream/veritas
 from queue import Empty
 from threading import Thread
 
@@ -19,30 +15,19 @@ from defame.helpers.parallelization.worker import Worker
 class Pool:
     """Manages a set of workers (sub-processes) executing queued tasks."""
 
-    def __init__(
-        self,
-        n_workers: int,
-        device_assignments: list[int] | None = None,
-        **kwargs
-    ) -> None:
+    def __init__(self,
+                 n_workers: int,
+                 device_assignments: list[int] | None = None,
+                 **kwargs):
         self.kwargs = kwargs
         self.n_workers = n_workers
-        self.device_assignments = device_assignments if device_assignments else self._get_default_device_assignments()
 
-<<<<<<< HEAD
         if device_assignments is None:
             device_assignments = self._get_default_device_assignments()
         self.device_assignments = device_assignments
 
         self.tasks: dict[str, Task] = dict()  # {task_id: task}
         self._results = Queue()
-=======
-        # Use Manager to create shared queues that work with spawn mode
-        self._manager = Manager()
-        self._scheduled_tasks = self._manager.Queue()
-        self._results = self._manager.Queue()
-        self._errors = self._manager.Queue()
->>>>>>> upstream/veritas
 
         # IPC (shared data across workers)
         self.manager = Manager()
@@ -129,9 +114,7 @@ class Pool:
     def stop(self):
         self.terminating = True
         self.terminate_all_workers()
-        # Shutdown the manager to clean up resources
-        if hasattr(self, '_manager'):
-            self._manager.shutdown()
+        self.manager.shutdown()
 
     def terminate_all_workers(self):
         if self.is_running():

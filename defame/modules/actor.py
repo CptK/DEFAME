@@ -3,6 +3,7 @@ from typing import Optional
 import time
 
 from defame.common import Action, Report, Evidence, logger
+from defame.common.structured_logger import StructuredLogger
 from defame.evidence_retrieval.tools import Tool, Searcher
 
 
@@ -12,7 +13,7 @@ class Actor:
     def __init__(self, tools: list[Tool]):
         self.tools = tools
 
-    def perform(self, actions: list[Action], doc: Report = None, summarize: bool = True) -> list[Evidence]:
+    def perform(self, actions: list[Action], doc: Report | None = None, summarize: bool = True, structured_logger: StructuredLogger | None = None) -> list[Evidence]:
         # TODO: Parallelize
         all_evidence = []
         for i, action in enumerate(actions):
@@ -20,7 +21,7 @@ class Actor:
             logger.log(f"[Actor] Starting action {i+1}/{len(actions)}: {type(action).__name__}")
             start_time = time.time()
             try:
-                evidence = self._perform_single(action, doc, summarize=summarize)
+                evidence = self._perform_single(action, doc, summarize=summarize, structured_logger=structured_logger)
                 elapsed = time.time() - start_time
                 logger.log(f"[Actor] Completed action {i+1}/{len(actions)} in {elapsed:.2f}s")
                 all_evidence.append(evidence)
@@ -30,12 +31,18 @@ class Actor:
                 raise
         return all_evidence
 
-    def _perform_single(self, action: Action, doc: Report = None, summarize: bool = True) -> Evidence:
+    def _perform_single(
+        self, 
+        action: Action,
+        doc: Report | None = None,
+        summarize: bool = True,
+        structured_logger: StructuredLogger | None = None
+    ) -> Evidence:
         tool = self.get_corresponding_tool_for_action(action)
         logger.log(f"[Actor] Using tool: {tool.name} for action: {action}")
         start_time = time.time()
         try:
-            evidence = tool.perform(action, summarize=summarize, doc=doc)
+            evidence = tool.perform(action, summarize=summarize, doc=doc, structured_logger=structured_logger)
             elapsed = time.time() - start_time
             logger.log(f"[Actor] Tool {tool.name} completed in {elapsed:.2f}s")
             return evidence

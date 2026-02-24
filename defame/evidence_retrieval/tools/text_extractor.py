@@ -7,6 +7,7 @@ import numpy as np
 from ezmm import Image, MultimodalSequence
 
 from defame.common import Action, logger
+from defame.common.structured_logger import StructuredLogger
 from defame.common.results import Results
 from defame.evidence_retrieval.tools.tool import Tool
 
@@ -77,7 +78,7 @@ class TextExtractor(Tool):
         self.model = None  # TODO: Later we could have a trainable OCR model here
         # self.reader = easyocr.Reader(['en'], gpu=use_gpu)
 
-    def _perform(self, action: OCR) -> Results:
+    def _perform(self, action: OCR, structured_logger: StructuredLogger | None = None) -> Results:
         return self.extract_text(action.image.image)
 
     def extract_text(self, image: PILImage) -> OCRResults:

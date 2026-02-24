@@ -10,6 +10,9 @@ from ezmm import Item
 from PIL import Image as PillowImage
 from markdownify import MarkdownConverter
 
+MEDIA_REF_REGEX = r"(<(?:image|video|audio):[0-9]+>)"
+MEDIA_ID_REGEX = r"(?:<(?:image|video|audio):([0-9]+)>)"
+MEDIA_SPECIFIER_REGEX = r"(?:<(image|video|audio):([0-9]+)>)"
 
 URL_REGEX = r"https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9@:%_\+.~#?&//=]*)"
 
@@ -159,6 +162,8 @@ def is_url(string: str) -> bool:
     )
     return re.match(url_pattern, string) is not None
 
+
+GUARDRAIL_WARNING = "Guardrail hit! The model refused to respond."
 
 def is_guardrail_hit(response: str) -> bool:
     return response.startswith("I cannot") or response.startswith("I'm sorry") or response.startswith("I'm unable to assist")

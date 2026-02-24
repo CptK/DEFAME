@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from ezmm import MultimodalSequence
 
 from config.globals import temp_dir
-from defame.common import logger
+from defame.common import MultimediaSnippet, logger
 from defame.utils.parsing import md, get_markdown_hyperlinks
 from defame.utils.requests import download_image, is_image_url
 

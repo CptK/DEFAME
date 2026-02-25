@@ -5,7 +5,7 @@ from pathlib import Path
 
 from config.globals import data_root_dir
 from defame.common import Label, Claim
-from defame.common.medium import Image, Video
+from ezmm import Image, Video
 from defame.eval.benchmark import Benchmark
 from defame.evidence_retrieval.tools import Geolocate, Search
 
@@ -372,7 +372,7 @@ class VeriTaS(Benchmark):
 
             try:
                 claim = Claim(
-                    data=claim_text,
+                    claim_text,
                     date=date,
                     id=claim_id
                 )

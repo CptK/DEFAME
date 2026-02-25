@@ -1,5 +1,7 @@
 import traceback
-from multiprocessing import Process
+from multiprocessing import get_context
+_spawn_context = get_context("spawn")
+
 from multiprocessing.managers import SyncManager
 from pathlib import Path
 from queue import Empty
@@ -68,7 +70,7 @@ def clean_task_for_serialization(task):
     return task
 
 
-class Worker(Process):
+class Worker(_spawn_context.Process):
     """Completing tasks in parallel."""
     id: int
 

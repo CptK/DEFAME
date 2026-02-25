@@ -1,3 +1,4 @@
+import threading
 from PIL import Image as PillowImage
 from io import BytesIO
 from typing import Optional, Any
@@ -15,6 +16,11 @@ HEADERS = {
                           "Chrome/123.0.0.0 Safari/537.36",
         }
 
+# ezmm's ItemRegistry uses a single shared SQLite cursor with no thread safety.
+# Serializing Image creation prevents "Recursive use of cursors not allowed" when
+# multiple scraper threads register images concurrently.
+_image_registry_lock = threading.Lock()
+
 
 def download_image(image_url: str) -> Optional[Image]:
     """Download an image from a URL and return it as an Image object."""
@@ -23,7 +29,8 @@ def download_image(image_url: str) -> Optional[Image]:
     response = requests.get(image_url, stream=True, timeout=10, headers=HEADERS)
     response.raise_for_status()
     img = PillowImage.open(BytesIO(response.content))
-    return Image(pillow_image=img)  # TODO: Check for duplicates
+    with _image_registry_lock:
+        return Image(pillow_image=img)  # TODO: Check for duplicates
 
 
 def download(url: str, max_size: int = None) -> Any:

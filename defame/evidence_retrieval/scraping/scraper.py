@@ -66,27 +66,26 @@ class Scraper:
 
     async def _scrape_multiple(self, urls: list[str], timeout: float | None = None) -> list[MultimediaSnippet | None]:
         tasks = [asyncio.create_task(self._scrape(url)) for url in urls]
-        if timeout and timeout > 0:
-            done, pending = await asyncio.wait(tasks, timeout=timeout)
-            if pending:
-                logger.warning(f"[Scraper] Scraping timed out after {timeout:.0f}s. "
-                               f"Cancelling {len(pending)} remaining URL(s).")
-                for task in pending:
-                    task.cancel()
-                # Wait briefly for cancellation to propagate
-                await asyncio.gather(*pending, return_exceptions=True)
-            # Return results in original URL order
-            results = []
-            for task in tasks:
-                if task in done and not task.cancelled():
-                    try:
-                        results.append(task.result())
-                    except Exception:
-                        results.append(None)
-                else:
+        effective_timeout = timeout if (timeout and timeout > 0) else 300  # 5 min fallback to prevent hangs
+        done, pending = await asyncio.wait(tasks, timeout=effective_timeout)
+        if pending:
+            logger.warning(f"[Scraper] Scraping timed out after {effective_timeout:.0f}s. "
+                           f"Cancelling {len(pending)} remaining URL(s).")
+            for task in pending:
+                task.cancel()
+            # Wait briefly for cancellation to propagate
+            await asyncio.gather(*pending, return_exceptions=True)
+        # Return results in original URL order
+        results = []
+        for task in tasks:
+            if task in done and not task.cancelled():
+                try:
+                    results.append(task.result())
+                except Exception:
                     results.append(None)
-            return results
-        return await asyncio.gather(*tasks)
+            else:
+                results.append(None)
+        return results
 
     def scrape(self, url: str) -> Optional[MultimodalSequence]:
         """Scrapes the contents of the specified webpage. Synchronous wrapper for _scrape()."""

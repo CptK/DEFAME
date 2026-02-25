@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any
 
 import torch
 from PIL.Image import Image as PILImage
@@ -36,9 +36,9 @@ class DetectObjects(Action):
 @dataclass
 class ObjectDetectionResults(Results):
     source: str
-    objects: List[str]
-    bounding_boxes: List[List[float]]
-    model_output: Optional[any] = None
+    objects: list[str]
+    bounding_boxes: list[list[float]]
+    model_output: Any | None = None
     text: str = field(init=False)  # This will be assigned in __post_init__
 
     def __post_init__(self):
@@ -50,7 +50,7 @@ class ObjectDetectionResults(Results):
         boxes_str = ', '.join([str(box) for box in self.bounding_boxes])
         return f'From [Source]({self.source}):\nObjects: {objects_str}\nBounding boxes: {boxes_str}'
 
-    def is_useful(self) -> Optional[bool]:
+    def is_useful(self) -> bool | None:
         return self.model_output is not None
 
 
@@ -105,5 +105,5 @@ class ObjectDetector(Tool):
         logger.log(str(result))
         return result
 
-    def _summarize(self, result: ObjectDetectionResults, **kwargs) -> Optional[MultimodalSequence]:
+    def _summarize(self, result: ObjectDetectionResults, **kwargs) -> MultimodalSequence | None:
         return MultimodalSequence("Object Detector not fully implemented yet.")  # TODO: Implement the summary

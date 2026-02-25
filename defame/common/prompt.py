@@ -17,11 +17,13 @@ class Prompt(MultimodalSequence):
     name: Optional[str]
     retry_instruction: Optional[str] = None
 
-    def __init__(self,
-                 text: str = None,
-                 name: str = None,
-                 placeholder_targets: dict = None,
-                 template_file_path: str = None):
+    def __init__(
+        self,
+        text: str | None = None,
+        name: str | None = None,
+        placeholder_targets: dict | None = None,
+        template_file_path: str | None = None
+    ):
         if template_file_path is not None:
             self.template_file_path = template_file_path
         if self.template_file_path is not None:
@@ -31,6 +33,22 @@ class Prompt(MultimodalSequence):
             text = compose_prompt(self.template_file_path, placeholder_targets)
         super().__init__(text)
         self.name = name
+
+    def with_videos_as_frames(self, n_frames: int = 5) -> "Prompt":
+        """Returns a new Prompt with all Video items replaced by sampled frames as Images."""
+        from ezmm.common.items import Image, Video
+        new_data = []
+        for item in self.data:
+            if isinstance(item, Video):
+                frames = item.sample_frames(n_frames, format='jpeg')
+                for frame_bytes in frames:
+                    new_data.append(Image(binary_data=frame_bytes))
+            else:
+                new_data.append(item)
+        result = object.__new__(self.__class__)
+        result.__dict__.update(self.__dict__)
+        result.data = new_data
+        return result
 
     def extract(self, response: str) -> dict | str | None:
         """Takes the model's output string and extracts the expected data."""

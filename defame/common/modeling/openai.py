@@ -16,9 +16,9 @@ class OpenAIAPI:
         self.model = model
         if not api_keys["openai_api_key"]:
             raise ValueError("No OpenAI API key provided. Add it to config/api_keys.yaml")
-        self.client = OpenAI(api_key=api_keys["openai_api_key"])
+        self.client = OpenAI(api_key=api_keys["openai_api_key"], timeout=300)
 
-    def __call__(self, prompt: Prompt, system_prompt: str, max_prompt_tokens: int = None, encoding=None, **kwargs):
+    def __call__(self, prompt: Prompt, system_prompt: str, max_prompt_tokens: int | None  = None, encoding=None, **kwargs):
         if prompt.has_videos():
             raise ValueError(f"{self.model} does not support videos.")
 

@@ -38,7 +38,7 @@ class OpenAIAPI:
             **kwargs
         )
         return completion.choices[0].message.content
-    
+
 
 class GPTModel(Model):
     open_source = False
@@ -105,9 +105,9 @@ class GPTModel(Model):
         """See the formula here: https://openai.com/api/pricing/"""
         n_tiles = np.ceil(image.width / 512) * np.ceil(image.height / 512)
         return 85 + 170 * n_tiles
-    
 
-def format_for_gpt(prompt: Prompt, encoding=None, max_tokens: int = None):
+
+def format_for_gpt(prompt: Prompt, encoding=None, max_tokens: int | None = None):
     content_formatted = []
     remaining = max_tokens  # None means no limit
 
@@ -141,11 +141,3 @@ def format_for_gpt(prompt: Prompt, encoding=None, max_tokens: int = None):
             })
 
     return content_formatted
-
-
-if __name__ == "__main__":
-    from defame.common.modeling import make_model
-    model = make_model("gpt_5")
-    prompt = Prompt(text="test")
-    print(model.count_tokens(prompt))
-    

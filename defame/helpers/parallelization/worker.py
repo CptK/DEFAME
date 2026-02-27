@@ -1,3 +1,4 @@
+import sqlite3
 import traceback
 from multiprocessing import get_context
 _spawn_context = get_context("spawn")
@@ -8,10 +9,37 @@ from queue import Empty
 from time import sleep
 
 import torch
+from ezmm.common.registry import item_registry
 
 from defame.common import logger, Content, Claim
 from defame.fact_checker import FactChecker
 from defame.helpers.common import TaskState
+
+
+def _connect_registry(worker_id: int, max_retries: int = 8, base_delay: float = 0.1):
+    """Connect to the ezmm item registry with exponential backoff.
+
+    Multiple workers spawning simultaneously race to open the WAL-mode SQLite
+    database.  The WAL shared-memory initialisation can fail with
+    ``sqlite3.OperationalError: locking protocol`` under high concurrency.
+    Retrying with back-off lets workers stagger until they all succeed.
+
+    After a failed connect() the registry is in a broken state: ``conn`` is set
+    but ``cur`` is None.  close() resets conn to None so the next attempt starts
+    clean.
+    """
+    for attempt in range(max_retries):
+        try:
+            if item_registry.conn is not None:
+                item_registry.close()
+            item_registry.connect()
+            return
+        except sqlite3.OperationalError:
+            if attempt == max_retries - 1:
+                logger.error(f"Worker {worker_id} failed to connect to item registry after {max_retries} attempts.")
+                raise
+            logger.warning(f"Worker {worker_id} failed to connect to item registry, retrying ...")
+            sleep(base_delay * (2 ** attempt))
 
 
 def move_to_cpu(obj, visited=None):
@@ -94,6 +122,8 @@ class Worker(_spawn_context.Process):
 
             logger.set_experiment_dir(target_dir)
             logger.set_log_level(print_log_level)
+
+            _connect_registry(self.id)
 
             # Initialize the fact-checker
             fc = FactChecker(device=device, **kwargs)

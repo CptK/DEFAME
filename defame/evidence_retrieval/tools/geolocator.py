@@ -1,12 +1,14 @@
 import base64
 import io
+import os
 from dataclasses import dataclass
 from typing import Any
 
 import requests
 import torch
 from PIL.Image import Image as PILImage
-from ezmm import MultimodalSequence, Image
+from ezmm import MultimodalSequence
+from ezmm.common.registry import item_registry
 from transformers import AutoProcessor, AutoModel
 
 from defame.common import Action, Results, logger
@@ -26,7 +28,7 @@ class Geolocate(Action):
             most likely countries.
         """
         self._save_parameters(locals())
-        self.image = Image(reference=image)
+        self.image = item_registry.get(reference=image)
         self.top_k = top_k
 
     def __eq__(self, other):
@@ -63,7 +65,7 @@ class Geolocator(Tool):
                  server_url: str = "http://localhost:5555", **kwargs):
         super().__init__(**kwargs)
         self.top_k = top_k
-        self.server_url = server_url
+        self.server_url = os.environ.get("GEOLOCATOR_URL", server_url)
 
         if server_url:
             logger.log(f"Geolocator using remote server at {server_url}")

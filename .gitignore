@@ -2,6 +2,7 @@ data/
 keys.txt
 config/local_api_keys.yaml
 temp/
+config/geolocator_url
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

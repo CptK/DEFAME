@@ -1,15 +1,15 @@
 """
-Geolocator model server. Loads StreetCLIP once and serves geolocation
-requests over HTTP so multiple DEFAME workers can share a single model
-instance without CUDA/fork issues.
+Geolocator model server. Loads StreetCLIP once per worker and serves
+geolocation requests over HTTP so multiple DEFAME workers can share model
+instances without CUDA/fork issues.
 
 Usage:
-    python -m defame.evidence_retrieval.tools.geolocator_server \
-        --model geolocal/StreetCLIP --port 5555
+    python scripts/geolocator_server.py --model geolocal/StreetCLIP --port 5555 --workers 5
 """
 import argparse
 import base64
 import io
+import os
 
 import torch
 import uvicorn
@@ -19,6 +19,8 @@ from pydantic import BaseModel
 from transformers import AutoProcessor, AutoModel
 
 app = FastAPI()
+
+# Populated in startup() after fork, so each worker process has its own copy.
 processor = None
 model = None
 device = None
@@ -51,6 +53,22 @@ class GeolocateResponse(BaseModel):
     text: str
 
 
+@app.on_event("startup")
+async def startup():
+    """Load the model inside each worker process after forking.
+
+    Loading here (rather than in __main__) avoids inheriting a CUDA context
+    across a fork, which can cause hangs or errors.
+    """
+    global processor, model, device
+    model_name = os.environ.get("GEOLOCATOR_MODEL", "geolocal/StreetCLIP")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"[PID {os.getpid()}] Loading {model_name} on {device}...", flush=True)
+    processor = AutoProcessor.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name).to(device)
+    print(f"[PID {os.getpid()}] Geolocator ready.", flush=True)
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -81,12 +99,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="geolocal/StreetCLIP")
     parser.add_argument("--port", type=int, default=5555)
+    parser.add_argument("--workers", type=int, default=1)
     args = parser.parse_args()
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Loading {args.model} on {device}...")
-    processor = AutoProcessor.from_pretrained(args.model)
-    model = AutoModel.from_pretrained(args.model).to(device)
-    print("Geolocator server ready.")
+    # Pass model name to worker processes via environment variable.
+    os.environ["GEOLOCATOR_MODEL"] = args.model
 
-    uvicorn.run(app, host="0.0.0.0", port=args.port)
+    uvicorn.run(
+        "scripts.geolocator_server:app",
+        host="0.0.0.0",
+        port=args.port,
+        workers=args.workers,
+    )

@@ -1,6 +1,7 @@
 import csv
 import inspect
 import json
+import os
 import re
 import time
 import traceback
@@ -21,6 +22,8 @@ from prettytable import PrettyTable
 from sklearn.metrics import precision_score, recall_score, f1_score
 from tqdm import tqdm
 
+from ezmm.common.registry import item_registry
+
 from defame.common import Label, logger, Action
 from defame.common.label import COARSEN_7_TO_3, coarsen_label
 from defame.common.modeling import model_specifier_to_shorthand, AVAILABLE_MODELS, make_model
@@ -39,20 +42,20 @@ from defame.utils.utils import unroll_dict
 
 
 def evaluate(
-        llm: str,
-        benchmark_name: str,
-        tools_config: dict[str, dict],
-        experiment_name: str | None = None,
-        fact_checker_kwargs: dict | None = None,
-        llm_kwargs: dict | None = None,
-        benchmark_kwargs: dict | None = None,
-        allowed_actions: list[str] | None = None,
-        n_samples: int | None = None,
-        sample_ids: list[int | str] | None = None,
-        random_sampling: bool = False,
-        print_log_level: str = "log",
-        continue_experiment_dir: str | None = None,
-        n_workers: int | None = None,
+    llm: str,
+    benchmark_name: str,
+    tools_config: dict[str, dict],
+    experiment_name: str | None = None,
+    fact_checker_kwargs: dict | None = None,
+    llm_kwargs: dict | None = None,
+    benchmark_kwargs: dict | None = None,
+    allowed_actions: list[str] | None = None,
+    n_samples: int | None = None,
+    sample_ids: list[int | str] | None = None,
+    random_sampling: bool = False,
+    print_log_level: str = "log",
+    continue_experiment_dir: str | None = None,
+    n_workers: int | None = None,
 ):
     assert not n_samples or not sample_ids
 
@@ -64,23 +67,35 @@ def evaluate(
 
     logger.set_log_level(print_log_level)
 
+    llm = model_specifier_to_shorthand(llm) if llm not in AVAILABLE_MODELS["Shorthand"].values else llm
+
+    procedure_variant = fact_checker_kwargs.get("procedure_variant", FactChecker.default_procedure)
+
+    # Set up the experiment directory before loading the benchmark, because
+    # benchmark loading triggers the first ezmm registry access (_register_media).
+    logger.set_experiment_dir(
+        path=continue_experiment_dir,
+        benchmark_name=benchmark_name,
+        procedure_name=procedure_variant,
+        model_name=llm,
+        experiment_name=experiment_name
+    )
+    logger.log("Saving all outputs to:", logger.target_dir.as_posix())
+
+    # Point the ezmm registry at the experiment-specific temp dir.
+    # This isolates concurrent jobs (which share the filesystem) and avoids
+    # SQLite WAL locking conflicts on the shared network filesystem.
+    # Setting EZMM before spawning workers ensures they inherit the same path.
+    ezmm_path = logger.target_dir / "temp"
+    os.environ["EZMM"] = str(ezmm_path)
+    item_registry.set_path(ezmm_path)
+
     benchmark = load_benchmark(benchmark_name, **benchmark_kwargs)
 
     is_resumed = continue_experiment_dir is not None
     status_verb = "Resuming" if is_resumed else "Starting"
     exp_name_str = f" '{bold(experiment_name)}'" if experiment_name else ""
     logger.info(f"{status_verb} evaluation{exp_name_str} on {benchmark.name}.")
-
-    llm = model_specifier_to_shorthand(llm) if llm not in AVAILABLE_MODELS["Shorthand"].values else llm
-
-    procedure_variant = fact_checker_kwargs.get("procedure_variant", FactChecker.default_procedure)
-
-    logger.set_experiment_dir(path=continue_experiment_dir,
-                              benchmark_name=benchmark.shorthand,
-                              procedure_name=procedure_variant,
-                              model_name=llm,
-                              experiment_name=experiment_name)
-    logger.log("Saving all outputs to:", logger.target_dir.as_posix())
 
     n_devices = torch.cuda.device_count()
     if n_workers is None:

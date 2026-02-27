@@ -107,6 +107,7 @@ class PlanPrompt(Prompt):
                  valid_actions: Collection[type[Action]],
                  extra_rules: str = None,
                  all_actions: bool = False):
+        self.valid_actions = set(valid_actions)
         action_docs = [get_action_documentation(a) for a in valid_actions]
         valid_action_str = "\n\n".join(action_docs)
         extra_rules = "" if extra_rules is None else remove_non_symbols(extra_rules)
@@ -137,10 +138,16 @@ class PlanPrompt(Prompt):
                 response = pattern.sub(claim_image_ref, response)
                 logger.warning(f"LLM generated reference '<image:k>'. Replacing it by {claim_image_ref}.")
 
+        logger.log(f"PlanPrompt LLM response:\n{response}")
         actions = extract_actions(response)
+        # Filter out any hallucinated actions that are not in the valid set
+        valid_actions = [a for a in actions if type(a) in self.valid_actions]
+        if len(valid_actions) < len(actions):
+            invalid = [a for a in actions if type(a) not in self.valid_actions]
+            logger.warning(f"LLM suggested actions not in valid set, ignoring: {[str(a) for a in invalid]}")
         reasoning = extract_reasoning(response)
         return dict(
-            actions=actions,
+            actions=valid_actions,
             reasoning=reasoning,
             response=response,
         )

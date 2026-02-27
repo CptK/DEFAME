@@ -133,8 +133,8 @@ def find_firecrawl(urls):
 def firecrawl_is_running(url):
     """Returns True iff Firecrawl is running."""
     try:
-        response = requests.get(url)
-    except (requests.exceptions.ConnectionError, requests.exceptions.RetryError):
+        response = requests.get(url, timeout=10)
+    except (requests.exceptions.ConnectionError, requests.exceptions.RetryError, requests.exceptions.Timeout):
         return False
     return response.status_code == 200
 

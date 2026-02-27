@@ -172,10 +172,14 @@ class BlueprintPlanner(Planner):
         has_images = doc.claim.has_images()
 
         # Build guidance from the blueprint iteration, skipping image actions if no images
+        # and skipping actions not in valid_actions
+        valid_action_names = {a.name for a in self.valid_actions}
         action_counts = {}
         for bp_action in blueprint_iteration.actions:
             name = bp_action.action.lower()
             if not has_images and name in image_action_names:
+                continue
+            if name not in valid_action_names:
                 continue
             action_counts[name] = action_counts.get(name, 0) + 1
 

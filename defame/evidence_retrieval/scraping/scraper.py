@@ -65,6 +65,13 @@ class Scraper:
         return asyncio.run(self._scrape_multiple(urls, timeout=timeout))
 
     async def _scrape_multiple(self, urls: list[str], timeout: float | None = None) -> list[MultimediaSnippet | None]:
+        # Check Firecrawl availability once per batch (not per URL) to avoid blocking the event loop repeatedly
+        if self.firecrawl_url is None:
+            self.locate_firecrawl()
+        if self.firecrawl_url and not firecrawl_is_running(self.firecrawl_url):
+            logger.error(f"Firecrawl stopped running! No response from {self.firecrawl_url}. "
+                         f"Falling back to naive scraper for this batch.")
+            self.firecrawl_url = None
         tasks = [asyncio.create_task(self._scrape(url)) for url in urls]
         effective_timeout = timeout if (timeout and timeout > 0) else 300  # 5 min fallback to prevent hangs
         done, pending = await asyncio.wait(tasks, timeout=effective_timeout)
@@ -117,23 +124,13 @@ class Scraper:
                 pass
 
         # Use Firecrawl to scrape from the URL
-        if not scraped:
-            # Try to find Firecrawl again if necessary
-            if self.firecrawl_url is None:
-                self.locate_firecrawl()
-
-            if self.firecrawl_url:
-                if firecrawl_is_running(self.firecrawl_url):
-                    logger.log(f"[Scraper] Using Firecrawl for: {url}")
-                    scraped = await self._scrape_firecrawl(url)
-                    if scraped:
-                        logger.log(f"[Scraper] Firecrawl succeeded for: {url}")
-                    else:
-                        logger.log(f"[Scraper] Firecrawl returned None for: {url}")
-                else:
-                    logger.error(f"Firecrawl stopped running! No response from {firecrawl_url}!. "
-                                 f"Falling back to Beautiful Soup until Firecrawl is available again.")
-                    self.firecrawl_url = None
+        if not scraped and self.firecrawl_url:
+            logger.log(f"[Scraper] Using Firecrawl for: {url}")
+            scraped = await self._scrape_firecrawl(url)
+            if scraped:
+                logger.log(f"[Scraper] Firecrawl succeeded for: {url}")
+            else:
+                logger.log(f"[Scraper] Firecrawl returned None for: {url}")
 
         # If the scrape still was not successful, use naive Beautiful Soup scraper
         if not scraped:

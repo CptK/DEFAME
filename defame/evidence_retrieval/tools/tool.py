@@ -1,5 +1,5 @@
 from abc import ABC
-from typing import Any, Optional
+from typing import Any
 import time
 
 import torch
@@ -18,7 +18,7 @@ class Tool(ABC):
         self.device = device
         self.llm = llm
 
-        self.current_claim_id: Optional[str] = None  # used by few tools to adjust claim-specific behavior
+        self.current_claim_id: str | None = None  # used by few tools to adjust claim-specific behavior
 
     def perform(
         self, action: Action, summarize: bool = True, structured_logger: StructuredLogger | None = None, **kwargs
@@ -30,11 +30,11 @@ class Tool(ABC):
         start_time = time.time()
         try:
             result = self._perform(action, structured_logger=structured_logger)
-            elapsed = time.time() - start_time
-            logger.log(f"[Tool:{self.name}] _perform completed in {elapsed:.2f}s, got {len(result) if hasattr(result, '__len__') else '?'} results")
+            execution_time = time.time() - start_time
+            logger.log(f"[Tool:{self.name}] _perform completed in {execution_time:.2f}s, got {len(result) if hasattr(result, '__len__') else '?'} results")
         except Exception as e:
-            elapsed = time.time() - start_time
-            logger.error(f"[Tool:{self.name}] _perform failed after {elapsed:.2f}s: {e}")
+            execution_time = time.time() - start_time
+            logger.error(f"[Tool:{self.name}] _perform failed after {execution_time:.2f}s: {e}")
             raise
 
         # Summarize the result
@@ -52,16 +52,17 @@ class Tool(ABC):
         else:
             summary = None
 
+        evidence = Evidence(result, action, takeaways=summary)
         if structured_logger and not hasattr(self, '_log_search_results'):
             self._log_tool_action(structured_logger, action, result, evidence, execution_time)
 
-        return Evidence(result, action, takeaways=summary)
+        return evidence
 
     def _perform(self, action: Action, structured_logger: StructuredLogger | None = None) -> Results:
         """The actual function executing the action."""
         raise NotImplementedError
 
-    def _summarize(self, result: Results, **kwargs) -> Optional[MultimodalSequence]:
+    def _summarize(self, result: Results, **kwargs) -> MultimodalSequence | None:
         """Turns the result into an LLM-friendly summary. May use additional
         context for summarization. Returns None iff the result does not contain any
         (potentially) helpful information."""
@@ -103,7 +104,7 @@ class Tool(ABC):
         )
 
 
-def get_available_actions(tools: list[Tool], available_actions: Optional[list[Action]]) -> set[type[Action]]:
+def get_available_actions(tools: list[Tool], available_actions: list[Action] | None) -> set[type[Action]]:
     actions = set()
     for tool in tools:
         actions.update(tool.actions)

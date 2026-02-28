@@ -94,7 +94,7 @@ class GPTModel(Model):
         return ""
 
     def count_tokens(self, prompt: Prompt | str) -> int:
-        n_text_tokens = len(self.encoding.encode(str(prompt)))
+        n_text_tokens = len(self.encoding.encode(str(prompt), disallowed_special=()))
         n_image_tokens = 0
         if isinstance(prompt, Prompt) and prompt.has_images():
             for image in prompt.images:

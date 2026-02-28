@@ -2,7 +2,7 @@ import os
 from dataclasses import dataclass
 from typing import Sequence
 
-from ezmm import Image
+from ezmm import Image, Video
 from google.auth.exceptions import DefaultCredentialsError
 from google.cloud import vision
 
@@ -63,7 +63,12 @@ class GoogleVisionAPI:
         """Run image reverse search through Google Vision API and parse results."""
         assert query.has_image(), "Google Vision API requires an image in the query."
 
-        image = vision.Image(content=query.image.get_base64_encoded())
+        media = query.image
+        if isinstance(media, Video):
+            image_bytes = media.sample_frames(1, format="jpeg")[0]
+        else:
+            image_bytes = media.get_base64_encoded()
+        image = vision.Image(content=image_bytes)
         response = self.client.web_detection(image=image)
         if response.error.message:
             logger.warning(f"{response.error.message}\nCheck Google Cloud Vision API documentation for more info.")
